@@ -2,9 +2,9 @@
 /* vim: set expandtab tabstop=4 softtabstop=4 shiftwidth=4: */
 /**
 *
-* Optimizing compilator from Brainf*ck to PHP
+* Optimizing compilator from Brainfuck to PHP
 *
-* PHP versions 4 and 5
+* PHP version 5.3+
 *
 * LICENSE: This source file is subject to version 3.0 of the PHP license
 * that is available through the world-wide-web at the following URI:
@@ -15,10 +15,9 @@
 * @category   Processing
 * @package    Processing_BF
 * @author     Evgeny Stepanischev <imbolk@gmail.com>
-* @copyright  2005 Evgeny Stepanischev
+* @copyright  2005-2013 Evgeny Stepanischev
 * @license    http://www.php.net/license/3_0.txt  PHP License 3.0
-* @version    CVS: $Id:$
-* @link       http://pear.php.net/package/System_SharedMemory
+* @version    1.1
 */
 
 // {{{ class Processing_BF
@@ -34,7 +33,7 @@ class Processing_BF
      * @return string PHP code
      *
      */
-    function compile($str, $input = '')
+    public function compile($str, $input = '')
     {
         return $this->addHeader($this->toPHP($str), $input);
     }
@@ -49,7 +48,7 @@ class Processing_BF
      * @return string PHP code
      *
      */
-    function addHeader($str, $input = '')
+    public function addHeader($str, $input = '')
     {
         $str = "\$d = array_fill(-65535, 65535, \$di = 0);\n" . $str;
 
@@ -73,9 +72,9 @@ class Processing_BF
      * @return string PHP code
      *
      */
-    function toPHP($str)
+    public function toPHP($str)
     {
-        return $this->_compile($this->_prepare);
+        return $this->_compile($this->_prepare($str));
     }
     // }}}
 
@@ -88,7 +87,7 @@ class Processing_BF
      * @return string prepared program code
      *
      */
-    function _prepare($str)
+    protected function _prepare($str)
     {
         // Remove trash chars
         $str = preg_replace('/[^\-\+\[\]><\,\.]/', '', $str);
@@ -111,7 +110,16 @@ class Processing_BF
         $str = strtr($str, $trans);
 
         // repeating opcodes
-        return preg_replace_callback('/([PMpm])(\\1{1,98})/', array(&$this, '_prepare_callback'), $str);
+        return preg_replace_callback('/([PMpm])(\\1{1,98})/', function($m) {
+            // Callback for repeating opcodes replacement
+            // sq. length
+            $len = strlen($m[2]) + 1;
+            if ($len < 10) {
+                $len = '0' . $len;
+            }
+
+            return $len.$m[1];
+        }, $str);
     }
     // }}}
     // {{{ _dir_op
@@ -126,7 +134,7 @@ class Processing_BF
      * @return string prepared program code
      *
      */
-    function _dir_op($dir, $shift, $col, $op)
+    protected function _dir_op($dir, $shift, $col, $op)
     {
         $dir   = $dir == 'm' ? '-' : '+';
         $shift = $shift ? (int) $shift : 1;
@@ -159,7 +167,7 @@ class Processing_BF
      * @return string prepared program code
      *
      */
-    function _op($repeat, $op, $idx = false)
+    protected function _op($repeat, $op, $idx = false)
     {
         $idx = $idx === false ? '$d[$di]' : '$d['.$idx.']';
 
@@ -201,11 +209,11 @@ class Processing_BF
      * @return string prepared program code
      *
      */
-    function _cycles_op($str)
+    protected function _cycles_op($str)
     {
         // Is loop entry point concur with exit point?
         $brack = array('m' => 0, 'p' => 0);
-        preg_replace('/(\d{2}|)([mp])/e', '$brack[$2] += "$1" ? "$1" : 1', $str);
+        preg_replace('/(\d{2}|)([mp])/e', '$brack["$2"] += "$1" ? "$1" : 1', $str);
 
         if ($brack['m'] != $brack['p']) {
             return 'L'.$str.'R';
@@ -287,7 +295,7 @@ class Processing_BF
      * @return string PHP program code
      *
      */
-    function _compile($str)
+    protected function _compile($str)
     {
         $repl = array
         (
@@ -324,26 +332,7 @@ class Processing_BF
         return strtr($str, $trans);
      }
      // }}}
-     // {{{ _prepare_callback()
 
-    /**
-     * Callback for repeating opcodes replacement
-     *
-     * @param array $m preg_replace match array
-     *
-     * @return string special opcode string
-     *
-     */
-    function _prepare_callback($m)
-    {
-        // sq. length
-        $len = strlen($m[2]) + 1;
-        if ($len < 10) {
-            $len = '0' . $len;
-        }
-
-        return $len.$m[1];
-    }
     // }}}
 }
 // }}}
