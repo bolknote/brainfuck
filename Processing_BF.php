@@ -230,7 +230,7 @@ class Processing_BF
     protected function _cycles_op($str)
     {
         // Is loop entry point concur with exit point?
-        $brack = array('m' => 0, 'p' => 0);
+        $brack = ['m' => 0, 'p' => 0];
 
         preg_replace_callback('/(\d{2}|)([mp])/',
             function ($m) use (&$brack) {
@@ -320,8 +320,7 @@ class Processing_BF
      */
     protected function _compile($str)
     {
-        $repl = array
-        (
+        $repl = [
             // [>>>+<<-<]
             '/L([MPmpc\d]+)R/e' => '$this->_cycles_op("$1")',
 
@@ -339,18 +338,18 @@ class Processing_BF
 
             // ++, ---, [-], [<], [>], <<<, >>>
             '/(\d{2}|)([MPmplrc])/e' => '$this->_op("$1", "$2")',
-        );
+        ];
 
         $str = preg_replace(array_keys($repl), array_values($repl), $str);
 
-        $trans = array(
+        $trans = [
             '.'  => 'flush(print chr($d[$di]));',
             'l'  => 'for (;$d[$di];--$di);',
             'r'  => 'for (;$d[$di];++$di);',
             ','  => 'if (isset($in{$id})) $d[$di] = $in{$id++}; else exit;',
             'L'  => 'while ($d[$di]) {',
             'R'  => '}',
-        );
+        ];
 
         return strtr($str, $trans);
      }
