@@ -53,14 +53,12 @@ class Processing_BF
         $str = "\$d = array_fill(-65535, 65535, \$di = 0);\n" . $str;
 
         // If input isn't empty we convert it to array of charcodes
-        $codes = $input == '' ?
-            [0] :
-            array_map('ord', preg_split('//', $input, -1, PREG_SPLIT_NO_EMPTY));
+        $codes = $input == '' ? [0] : unpack('c*', $input);
 
         // End of string in BF
         $codes[] = '$id = 0';
 
-        return '$in=array(' . implode(', ', $codes) . ');' . $str;
+        return '$in=[' . implode(', ', $codes) . '];' . $str;
     }
     // }}}
 
