@@ -131,9 +131,6 @@ class Processing_BF
             $str);
         }
 
-        // ccc… → c
-        $str = preg_replace('/c+/', 'c', $str);
-
         // repeating opcodes
         $result = preg_replace_callback('/([PMpm])(\\1{1,98})/', function($m) {
             // Callback for repeating opcodes replacement
@@ -330,12 +327,6 @@ class Processing_BF
     protected function _compile($str)
     {
         $repl = [
-            // [-][]
-            '/c(?:LR)+/' => 'c',
-
-            // ++---[-]
-            '/(?:\d*[PM])+c/' => 'c',
-
             // [>>>+<<-<]
             '/L([MPmpc\d]+)R/e' => '$this->_cycles_op("$1")',
 
