@@ -50,15 +50,16 @@ class Processing_BF
      */
     public function addHeader($str, $input = '')
     {
-        $str = "\$d = array_fill(-65535, 65535, \$di = 0);\n" . $str;
+        $str = "\$d = array_fill(-65535, 65535, \$i = 0);\n" . $str;
 
         // If input isn't empty we convert it to array of charcodes
-        $codes = $input == '' ? [0] : unpack('c*', $input);
+        $codes = $input == '' ? [] : unpack('c*', $input);
+        $size  = count($codes);
 
         // End of string in BF
-        $codes[] = '$id = 0';
+        $codes[] = '$p=0';
 
-        return '$in=[' . implode(', ', $codes) . '];' . $str;
+        return "\$size=$size; \$in=[" . implode(', ', $codes) . '];' . $str;
     }
     // }}}
 
@@ -161,7 +162,7 @@ class Processing_BF
         $dir   = $dir == 'm' ? '-' : '+';
         $shift = $shift ? (int) $shift : 1;
 
-        $shift = '$di'.$dir.intval($shift);
+        $shift = '$i'.$dir.intval($shift);
 
         if ($op == 'c') {
             $op = '=0';
@@ -191,7 +192,7 @@ class Processing_BF
      */
     protected function _op($repeat, $op, $idx = false)
     {
-        $idx = $idx === false ? '$d[$di]' : '$d['.$idx.']';
+        $idx = $idx === false ? '$d[$i]' : '$d['.$idx.']';
 
         if ($repeat = (int) $repeat) {
            switch ($op) {
@@ -202,9 +203,9 @@ class Processing_BF
                case 'c':
                    return $idx.'=0;';
                case 'm':
-                   return '$di-='.$repeat.';';
+                   return '$i-='.$repeat.';';
                case 'p':
-                   return '$di+='.$repeat.';';
+                   return '$i+='.$repeat.';';
            }
         } else {
            switch ($op) {
@@ -215,9 +216,9 @@ class Processing_BF
                case 'c':
                    return $idx.'=0;';
                case 'm':
-                   return '--$di;';
+                   return '--$i;';
                case 'p':
-                   return '++$di;';
+                   return '++$i;';
            }
         }
 
@@ -286,7 +287,7 @@ class Processing_BF
                         $op  = $op == 'M' ? '-' : '+';
                         $num = $num == 1 ? '' : '*'.$num;
 
-                        $out .= '$d[$di'.$pos.']'.$op.'=$d[$di]'.$num.';';
+                        $out .= '$d[$i'.$pos.']'.$op.'=$d[$i]'.$num.';';
                     } else {
                         $start = $pos == 0;
                     }
@@ -294,9 +295,9 @@ class Processing_BF
 
                 case 'c':
                     if ($pos) {
-                        $out .= 'if ($d[$di]) $d[$di'.$pos.']=0;';
+                        $out .= 'if ($d[$i]) $d[$i'.$pos.']=0;';
                     } else {
-                        $out .= '$d[$di]=0;';
+                        $out .= '$d[$i]=0;';
                         $start = true;
                         $clear_end = false;
                     }
@@ -306,7 +307,7 @@ class Processing_BF
 
         if ($start) {
             if ($clear_end) {
-                $out .= '$d[$di]=0;';
+                $out .= '$d[$i]=0;';
             }
 
             return $out;
@@ -337,7 +338,7 @@ class Processing_BF
             '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/e' => '$this->_dir_op("$2", "$1", "$3", "$4")',
 
             // ++>>, <<<-
-            '/(\d{2}|(?<!\d))([MP])([mp])/e' => '$this->_op("$1", "$2", "$3" == "m" ? \'$di--\' : \'$di++\')',
+            '/(\d{2}|(?<!\d))([MP])([mp])/e' => '$this->_op("$1", "$2", "$3" == "m" ? \'$i--\' : \'$i++\')',
 
             // <<+, >>>-, >>>[-]
             '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/e' => '$this->_op("$3", "$4", rtrim($this->_op("$1", "$2"), ";"))',
@@ -349,12 +350,13 @@ class Processing_BF
         $str = preg_replace(array_keys($repl), array_values($repl), $str);
 
         $trans = [
-            '.'  => 'print chr($d[$di]);',
-            'l'  => 'for (;$d[$di];--$di);',
-            'r'  => 'for (;$d[$di];++$di);',
-            ','  => 'if (isset($in{$id})) $d[$di] = $in{$id++}; else exit;',
-            'L'  => 'while ($d[$di]) {',
-            'R'  => '};',
+            '.'  => 'echo chr($d[$i]);',
+            'l'  => 'for (;$d[$i];--$i);',
+            'r'  => 'for (;$d[$i];++$i);',
+            ','  => 'if ($p < $size) $d[$i] = $in[$p++]; else '.
+                    '{$in = array_values(unpack("c*", file_get_contents("php://stdin")));$in[]=0;$d[$i] = $in[$p=0];}',
+            'L'  => 'while ($d[$i]) {',
+            'R'  => '}',
         ];
 
         return strtr($str, $trans);
