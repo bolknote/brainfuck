@@ -351,7 +351,7 @@ class Processing_BF
         $str = preg_replace(array_keys($repl), array_values($repl), $str);
 
         $trans = [
-            '.'  => 'flush(print chr($d[$di]));',
+            '.'  => 'print chr($d[$di]);',
             'l'  => 'for (;$d[$di];--$di);',
             'r'  => 'for (;$d[$di];++$di);',
             ','  => 'if (isset($in{$id})) $d[$di] = $in{$id++}; else exit;',
