@@ -54,7 +54,7 @@ class Processing_BF
 
         // If input isn't empty we convert it to array of charcodes
         $codes = $input == '' ?
-            array(0) :
+            [0] :
             array_map('ord', preg_split('//', $input, -1, PREG_SPLIT_NO_EMPTY));
 
         // End of string in BF
@@ -112,13 +112,17 @@ class Processing_BF
         foreach (['MP', 'mp'] as $set) {
             $str = preg_replace_callback("/[$set]+/",
                 function($m) {
-                    $out = '';
+                    $freq = count_chars($m[0], 1);
+                    arsort($freq);
 
-                    foreach (count_chars($m[0], 1) as $char => $mul) {
-                        $out .= str_repeat(chr($char), $mul);
+                    $winner = chr(key($freq));
+                    $diff = current($freq) - end($freq);
+
+                    if ($diff) {
+                        return str_repeat($winner, $diff);
                     }
 
-                    return $out;
+                    return '';
                 },
             $str);
         }
