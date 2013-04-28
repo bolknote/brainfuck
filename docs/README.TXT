@@ -26,7 +26,7 @@ ROT13;
 
     include_once 'Processing/Processing_BF.php';
 
-    $bf =& new Processing_BF();
+    $bf = new Processing_BF();
 
     $res = $bf->compile($program, 'test');
 
