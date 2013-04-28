@@ -110,22 +110,29 @@ class Processing_BF
 
         // group + and -, > and <
         foreach (['MP', 'mp'] as $set) {
-            $str = preg_replace_callback("/[$set]+/",
+            $str = preg_replace_callback("/[$set]{2,}/",
                 function($m) {
                     $freq = count_chars($m[0], 1);
-                    arsort($freq);
+                    if (count($freq) == 2) {
+                        arsort($freq);
 
-                    $winner = chr(key($freq));
-                    $diff = current($freq) - end($freq);
+                        $winner = chr(key($freq));
+                        $diff = current($freq) - end($freq);
 
-                    if ($diff) {
-                        return str_repeat($winner, $diff);
+                        if ($diff) {
+                            return str_repeat($winner, $diff);
+                        }
+
+                        return '';
                     }
 
-                    return '';
+                    return $m[0];
                 },
             $str);
         }
+
+        // ccc… → c
+        $str = preg_replace('/c+/', 'c', $str);
 
         // repeating opcodes
         $result = preg_replace_callback('/([PMpm])(\\1{1,98})/', function($m) {
@@ -138,8 +145,6 @@ class Processing_BF
 
             return $len.$m[1];
         }, $str);
-
-        var_dump($result);
 
         return $result;
     }
@@ -325,6 +330,12 @@ class Processing_BF
     protected function _compile($str)
     {
         $repl = [
+            // [-][]
+            '/c(?:LR)+/' => 'c',
+
+            // ++---[-]
+            '/(?:\d*[PM])+c/' => 'c',
+
             // [>>>+<<-<]
             '/L([MPmpc\d]+)R/e' => '$this->_cycles_op("$1")',
 
@@ -352,7 +363,7 @@ class Processing_BF
             'r'  => 'for (;$d[$di];++$di);',
             ','  => 'if (isset($in{$id})) $d[$di] = $in{$id++}; else exit;',
             'L'  => 'while ($d[$di]) {',
-            'R'  => '}',
+            'R'  => '};',
         ];
 
         return strtr($str, $trans);
