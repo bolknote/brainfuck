@@ -222,6 +222,8 @@ class Processing_BF
                    return '++$di;';
            }
         }
+
+        return str_repeat($op, 1 + (int) $repeat);
     }
     // }}}
     // {{{ _cycles_op
