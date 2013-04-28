@@ -213,7 +213,12 @@ class Processing_BF
     {
         // Is loop entry point concur with exit point?
         $brack = array('m' => 0, 'p' => 0);
-        preg_replace('/(\d{2}|)([mp])/e', '$brack["$2"] += "$1" ? "$1" : 1', $str);
+
+        preg_replace_callback('/(\d{2}|)([mp])/',
+            function ($m) use (&$brack) {
+                $brack[$m[2]] += $m[1] ? $m[1] : 1;
+            },
+        $str);
 
         if ($brack['m'] != $brack['p']) {
             return 'L'.$str.'R';
