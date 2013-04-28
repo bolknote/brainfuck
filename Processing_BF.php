@@ -93,8 +93,7 @@ class Processing_BF
         $str = preg_replace('/[^\-\+\[\]><\,\.]/', '', $str);
 
         // Escaping opcodes
-        $trans = array
-        (
+        $trans = [
             '[<]' => 'l',
             '[>]' => 'r',
             '[-]' => 'c',
@@ -105,12 +104,27 @@ class Processing_BF
             '>'   => 'p',
             '['   => 'L',
             ']'   => 'R',
-        );
+        ];
 
         $str = strtr($str, $trans);
 
+        // group + and -, > and <
+        foreach (['MP', 'mp'] as $set) {
+            $str = preg_replace_callback("/[$set]+/",
+                function($m) {
+                    $out = '';
+
+                    foreach (count_chars($m[0], 1) as $char => $mul) {
+                        $out .= str_repeat(chr($char), $mul);
+                    }
+
+                    return $out;
+                },
+            $str);
+        }
+
         // repeating opcodes
-        return preg_replace_callback('/([PMpm])(\\1{1,98})/', function($m) {
+        $result = preg_replace_callback('/([PMpm])(\\1{1,98})/', function($m) {
             // Callback for repeating opcodes replacement
             // sq. length
             $len = strlen($m[2]) + 1;
@@ -120,6 +134,10 @@ class Processing_BF
 
             return $len.$m[1];
         }, $str);
+
+        var_dump($result);
+
+        return $result;
     }
     // }}}
     // {{{ _dir_op
