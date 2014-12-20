@@ -235,8 +235,35 @@ class Processing_BF
         return str_repeat($op, 1 + (int) $repeat);
     }
     // }}}
-    // {{{ _cycles_op
+    // {{{ _apply_divider
 
+
+    /**
+     * Apply loop divider to code
+     * @param string $out     code string
+     * @param int    $divider divider value (0 = no divider)
+     *
+     * @return string prepared program code
+     *
+     */
+    protected function _apply_divider($out, $divider)
+    {
+        $divider = $divider ?: 1;
+
+        $out = preg_replace_callback('/\*\((\d+)\)/S', function ($m) use ($divider) {
+            $num = $m[1] / $divider;
+
+            if ($num === 1) {
+                return '';
+            }
+
+            return $num == (int) $num ? '*'.$num : '/'.(1 / $num);
+        }, $out);
+
+        return $out;
+    }
+
+    // {{{ _cycles_op
     /**
      * Cycles optimization
      * @param string $str string to optimization
@@ -297,12 +324,13 @@ class Processing_BF
                     if ($start || $pos) {
                         $op  = $op == 'M' ? '-' : '+';
 
-                        $out .= '$d[$i'.$pos.']'.$op.'=$d[$i]*'.$num.';';
+                        $out .= '$d[$i'.$pos.']'.$op.'=$d[$i]*('.$num.');';
                     } else {
                         $start = $pos == 0;
 
                         if ($start) {
                             $divider += $num;
+                            $out = $this->_apply_divider($out, $divider);
                         }
                     }
                     break;
@@ -324,19 +352,7 @@ class Processing_BF
                 $out .= '$d[$i]=0;';
             }
 
-            if ($divider > 1) {
-                $out = preg_replace_callback('/\*(\d+)/S', function ($m) use ($divider) {
-                    $num = $m[1] / $divider;
-
-                    if ($num === 1) {
-                        return '';
-                    }
-
-                    return $num == (int) $num ? '*'.$num : '/'.(1 / $num);
-                }, $out);
-            } else {
-                $out = str_replace('*1;', ';', $out);
-            }
+            $out = $this->_apply_divider($out, $divider);
 
             return $out;
         }
