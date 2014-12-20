@@ -329,25 +329,33 @@ class Processing_BF
     {
         $repl = [
             // [>>>+<<-<]
-            '/L([MPmpc\d]+)R/e' => '$this->_cycles_op("$1")',
+            '/L([MPmpc\d]+)R/' =>
+                function ($m) { return $this->_cycles_op($m[1]); },
 
             // <+++>, <[-]>, <--->
-            '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/e' => '$this->_dir_op("$2", "$1", "$3", "$4")',
+            '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' =>
+                function ($m) { return $this->_dir_op($m[2], $m[1], $m[3], $m[4]); },
 
             // >+++<, >[-]<. >---<
-            '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/e' => '$this->_dir_op("$2", "$1", "$3", "$4")',
+            '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/' =>
+                function ($m) { return $this->_dir_op($m[2], $m[1], $m[3], $m[4]); },
 
             // ++>>, <<<-
-            '/(\d{2}|(?<!\d))([MP])([mp])/e' => '$this->_op("$1", "$2", "$3" == "m" ? \'$i--\' : \'$i++\')',
+            '/(\d{2}|(?<!\d))([MP])([mp])/' =>
+                function ($m) { return $this->_op($m[1], $m[2], $m[3] === "m" ? '$i--' : '$i++'); },
 
             // <<+, >>>-, >>>[-]
-            '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/e' => '$this->_op("$3", "$4", rtrim($this->_op("$1", "$2"), ";"))',
+            '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' =>
+                function ($m) { return $this->_op($m[3], $m[4], rtrim($this->_op($m[1], $m[2]), ";")); },
 
             // ++, ---, [-], [<], [>], <<<, >>>
-            '/(\d{2}|)([MPmplrc])/e' => '$this->_op("$1", "$2")',
+            '/(\d{2}|)([MPmplrc])/' =>
+                function ($m) { return $this->_op($m[1], $m[2]); },
         ];
 
-        $str = preg_replace(array_keys($repl), array_values($repl), $str);
+        foreach ($repl as $pattern => $func) {
+            $str = preg_replace_callback($pattern, $func, $str);
+        }
 
         $trans = [
             '.'  => 'echo chr($d[$i]);',
