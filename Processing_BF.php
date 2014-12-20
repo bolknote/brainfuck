@@ -1,24 +1,24 @@
-<?
+<?php
 /* vim: set expandtab tabstop=4 softtabstop=4 shiftwidth=4: */
 /**
-*
-* Optimizing compilator from Brainfuck to PHP
-*
-* PHP version 5.3+
-*
-* LICENSE: This source file is subject to version 3.0 of the PHP license
-* that is available through the world-wide-web at the following URI:
-* http://www.php.net/license/3_0.txt.  If you did not receive a copy of
-* the PHP License and are unable to obtain it through the web, please
-* send a note to license@php.net so we can mail you a copy immediately.
-*
-* @category   Processing
-* @package    Processing_BF
-* @author     Evgeny Stepanischev <imbolk@gmail.com>
-* @copyright  2005-2013 Evgeny Stepanischev
-* @license    http://www.php.net/license/3_0.txt  PHP License 3.0
-* @version    1.1
-*/
+ *
+ * Optimizing compilator from Brainfuck to PHP
+ *
+ * PHP version 5.3+
+ *
+ * LICENSE: This source file is subject to version 3.0 of the PHP license
+ * that is available through the world-wide-web at the following URI:
+ * http://www.php.net/license/3_0.txt.  If you did not receive a copy of
+ * the PHP License and are unable to obtain it through the web, please
+ * send a note to license@php.net so we can mail you a copy immediately.
+ *
+ * @category   Processing
+ * @package    Processing_BF
+ * @author     Evgeny Stepanischev <imbolk@gmail.com>
+ * @copyright  2005-2013 Evgeny Stepanischev
+ * @license    http://www.php.net/license/3_0.txt  PHP License 3.0
+ * @version    1.1
+ */
 
 // {{{ class Processing_BF
 
@@ -27,7 +27,7 @@ class Processing_BF
     // {{{ compile()
     /**
      * Program compling
-     * @param string $str BF program code
+     * @param string $str   BF program code
      * @param string $input input data of BF program
      *
      * @return string PHP code
@@ -42,7 +42,7 @@ class Processing_BF
     // {{{ addHeader()
     /**
      * Add standart header to compiled BF program
-     * @param string $str compiled BF program
+     * @param string $str   compiled BF program
      * @param string $input input data of BF program
      *
      * @return string PHP code
@@ -50,7 +50,7 @@ class Processing_BF
      */
     public function addHeader($str, $input = '')
     {
-        $str = "\$d = array_fill(-65535, 65535, \$i = 0);\n" . $str;
+        $str = "\$d = array_fill(-65535, 65535, \$i = 0);\n".$str;
 
         // If input isn't empty we convert it to array of charcodes
         $codes = $input == '' ? [] : unpack('c*', $input);
@@ -59,7 +59,7 @@ class Processing_BF
         // End of string in BF
         $codes[] = '$p=0';
 
-        return "\$size=$size; \$in=[" . implode(', ', $codes) . '];' . $str;
+        return "\$size=$size; \$in=[".implode(', ', $codes).'];'.$str;
     }
     // }}}
 
@@ -110,7 +110,7 @@ class Processing_BF
         // group + and -, > and <
         foreach (['MP', 'mp'] as $set) {
             $str = preg_replace_callback("/[$set]{2,}/",
-                function($m) {
+                function ($m) {
                     $freq = count_chars($m[0], 1);
                     if (count($freq) == 2) {
                         arsort($freq);
@@ -131,12 +131,12 @@ class Processing_BF
         }
 
         // repeating opcodes
-        $result = preg_replace_callback('/([PMpm])(\\1{1,98})/', function($m) {
+        $result = preg_replace_callback('/([PMpm])(\\1{1,98})/', function ($m) {
             // Callback for repeating opcodes replacement
             // sq. length
             $len = strlen($m[2]) + 1;
             if ($len < 10) {
-                $len = '0' . $len;
+                $len = '0'.$len;
             }
 
             return $len.$m[1];
@@ -149,10 +149,10 @@ class Processing_BF
 
     /**
      * Complex opcodes transformation
-     * @param string $dir move direction
-     * @param int $shift number of movement
-     * @param int $col number for sub or add
-     * @param string $op operation - sub (M) or add (P)
+     * @param string $dir   move direction
+     * @param int    $shift number of movement
+     * @param int    $col   number for sub or add
+     * @param string $op    operation - sub (M) or add (P)
      *
      * @return string prepared program code
      *
@@ -184,8 +184,8 @@ class Processing_BF
     /**
      * Simple opcodes transformation
      * @param int $repeat operation repeat factor
-     * @param int $op opcode
-     * @param int $idx optional data index string
+     * @param int $op     opcode
+     * @param int $idx    optional data index string
      *
      * @return string prepared program code
      *
@@ -195,7 +195,7 @@ class Processing_BF
         $idx = $idx === false ? '$d[$i]' : '$d['.$idx.']';
 
         if ($repeat = (int) $repeat) {
-           switch ($op) {
+            switch ($op) {
                case 'M':
                    return $idx.'-='.$repeat.';';
                case 'P':
@@ -208,7 +208,7 @@ class Processing_BF
                    return '$i+='.$repeat.';';
            }
         } else {
-           switch ($op) {
+            switch ($op) {
                case 'M':
                    return $idx.'--;';
                case 'P':
@@ -267,7 +267,7 @@ class Processing_BF
             }
 
             if ($pos > 0) {
-                $pos = '+' . (int) $pos;
+                $pos = '+'.(int) $pos;
             } elseif (!$pos) {
                 $pos = '';
             }
@@ -329,28 +329,22 @@ class Processing_BF
     {
         $repl = [
             // [>>>+<<-<]
-            '/L([MPmpc\d]+)R/' =>
-                function ($m) { return $this->_cycles_op($m[1]); },
+            '/L([MPmpc\d]+)R/' => function ($m) { return $this->_cycles_op($m[1]); },
 
             // <+++>, <[-]>, <--->
-            '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' =>
-                function ($m) { return $this->_dir_op($m[2], $m[1], $m[3], $m[4]); },
+            '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' => function ($m) { return $this->_dir_op($m[2], $m[1], $m[3], $m[4]); },
 
             // >+++<, >[-]<. >---<
-            '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/' =>
-                function ($m) { return $this->_dir_op($m[2], $m[1], $m[3], $m[4]); },
+            '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/' => function ($m) { return $this->_dir_op($m[2], $m[1], $m[3], $m[4]); },
 
             // ++>>, <<<-
-            '/(\d{2}|(?<!\d))([MP])([mp])/' =>
-                function ($m) { return $this->_op($m[1], $m[2], $m[3] === "m" ? '$i--' : '$i++'); },
+            '/(\d{2}|(?<!\d))([MP])([mp])/' => function ($m) { return $this->_op($m[1], $m[2], $m[3] === "m" ? '$i--' : '$i++'); },
 
             // <<+, >>>-, >>>[-]
-            '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' =>
-                function ($m) { return $this->_op($m[3], $m[4], rtrim($this->_op($m[1], $m[2]), ";")); },
+            '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' => function ($m) { return $this->_op($m[3], $m[4], rtrim($this->_op($m[1], $m[2]), ";")); },
 
             // ++, ---, [-], [<], [>], <<<, >>>
-            '/(\d{2}|)([MPmplrc])/' =>
-                function ($m) { return $this->_op($m[1], $m[2]); },
+            '/(\d{2}|)([MPmplrc])/' => function ($m) { return $this->_op($m[1], $m[2]); },
         ];
 
         foreach ($repl as $pattern => $func) {
@@ -368,10 +362,10 @@ class Processing_BF
         ];
 
         return strtr($str, $trans);
-     }
+    }
      // }}}
 
     // }}}
 }
 // }}}
-?>
+;
