@@ -4,7 +4,7 @@
  *
  * Optimizing compilator from Brainfuck to PHP
  *
- * PHP version 5.3+
+ * PHP version 5.5+
  *
  * LICENSE: This source file is subject to version 3.0 of the PHP license
  * that is available through the world-wide-web at the following URI:
@@ -15,9 +15,9 @@
  * @category   Processing
  * @package    Processing_BF
  * @author     Evgeny Stepanischev <imbolk@gmail.com>
- * @copyright  2005-2013 Evgeny Stepanischev
+ * @copyright  2005-2014 Evgeny Stepanischev
  * @license    http://www.php.net/license/3_0.txt  PHP License 3.0
- * @version    1.1
+ * @version    1.2
  */
 
 // {{{ class Processing_BF
@@ -50,7 +50,7 @@ class Processing_BF
      */
     public function addHeader($str, $input = '')
     {
-        $str = "\$d = array_fill(-65535, 65535, \$i = 0);\n".$str;
+        $str = "\$d = array_fill(0, 65535, 0); \$i=0; ".$str;
 
         // If input isn't empty we convert it to array of charcodes
         $codes = $input == '' ? [] : unpack('c*', $input);
@@ -59,7 +59,7 @@ class Processing_BF
         // End of string in BF
         $codes[] = '$p=0';
 
-        return "\$size=$size; \$in=[".implode(', ', $codes).'];'.$str;
+        return "\$size=$size; \$in=[".implode(', ', $codes).']; '.$str;
     }
     // }}}
 
@@ -107,9 +107,12 @@ class Processing_BF
 
         $str = strtr($str, $trans);
 
+        // Remove useless first cycle
+        $str = preg_replace('/^[lrcmp]* L ( ( (?>[^LR]+) | (?R) )* ) R/x', '', $str);
+
         // group + and -, > and <
         foreach (['MP', 'mp'] as $set) {
-            $str = preg_replace_callback("/[$set]{2,}/",
+            $str = preg_replace_callback("/[$set]{2,}/S",
                 function ($m) {
                     $freq = count_chars($m[0], 1);
                     if (count($freq) == 2) {
@@ -134,12 +137,7 @@ class Processing_BF
         $result = preg_replace_callback('/([PMpm])(\\1{1,98})/', function ($m) {
             // Callback for repeating opcodes replacement
             // sq. length
-            $len = strlen($m[2]) + 1;
-            if ($len < 10) {
-                $len = '0'.$len;
-            }
-
-            return $len.$m[1];
+            return sprintf('%02d%s', strlen($m[2]) + 1, $m[1]);
         }, $str);
 
         return $result;
@@ -239,9 +237,9 @@ class Processing_BF
         // Is loop entry point concur with exit point?
         $brack = ['m' => 0, 'p' => 0];
 
-        preg_replace_callback('/(\d{2}|)([mp])/',
+        preg_replace_callback('/(\d{2}|)([mp])/S',
             function ($m) use (&$brack) {
-                $brack[$m[2]] += $m[1] ? $m[1] : 1;
+                $brack[$m[2]] += $m[1] ?: 1;
             },
         $str);
 
@@ -258,8 +256,8 @@ class Processing_BF
 
         $len = strlen($str);
         for ($i = 0; $i<$len; $i++) {
-            if (is_numeric($str{$i})) {
-                $num = intval(substr($str, $i++, 2));
+            if ((string) (int) $str{$i} === (string) $str{$i}) {
+                $num = (int) substr($str, $i++, 2);
                 $op  = $str{++$i};
             } else {
                 $num = 1;
@@ -285,7 +283,16 @@ class Processing_BF
                 case 'P':
                     if ($start || $pos) {
                         $op  = $op == 'M' ? '-' : '+';
-                        $num = $num == 1 ? '' : '*'.$num;
+                        if ($num == 1) {
+                            $num = '';
+                        } else {
+                            $pow = log($num, 2);
+                            if ((int) $pow == $pow) {
+                                $num = '<<'.$pow;
+                            } else {
+                                $num = '*'.$num;
+                            }
+                        }
 
                         $out .= '$d[$i'.$pos.']'.$op.'=$d[$i]'.$num.';';
                     } else {
@@ -329,34 +336,46 @@ class Processing_BF
     {
         $repl = [
             // [>>>+<<-<]
-            '/L([MPmpc\d]+)R/' => function ($m) { return $this->_cycles_op($m[1]); },
+            '/L([MPmpc\d]+)R/' => function ($m) {
+                return $this->_cycles_op($m[1]);
+            },
 
             // <+++>, <[-]>, <--->
-            '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' => function ($m) { return $this->_dir_op($m[2], $m[1], $m[3], $m[4]); },
+            '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' => function ($m) {
+                return $this->_dir_op($m[2], $m[1], $m[3], $m[4]);
+            },
 
             // >+++<, >[-]<. >---<
-            '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/' => function ($m) { return $this->_dir_op($m[2], $m[1], $m[3], $m[4]); },
+            '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/' => function ($m) {
+                return $this->_dir_op($m[2], $m[1], $m[3], $m[4]);
+            },
 
             // ++>>, <<<-
-            '/(\d{2}|(?<!\d))([MP])([mp])/' => function ($m) { return $this->_op($m[1], $m[2], $m[3] === "m" ? '$i--' : '$i++'); },
+            '/(\d{2}|(?<!\d))([MP])([mp])/' => function ($m) {
+                return $this->_op($m[1], $m[2], $m[3] === "m" ? '$i--' : '$i++');
+            },
 
             // <<+, >>>-, >>>[-]
-            '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' => function ($m) { return $this->_op($m[3], $m[4], rtrim($this->_op($m[1], $m[2]), ";")); },
+            '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' => function ($m) {
+                return $this->_op($m[3], $m[4], rtrim($this->_op($m[1], $m[2]), ";"));
+            },
 
             // ++, ---, [-], [<], [>], <<<, >>>
-            '/(\d{2}|)([MPmplrc])/' => function ($m) { return $this->_op($m[1], $m[2]); },
-        ];
+            '/(\d{2}|)([MPmplrc])/' => function ($m) {
+                return $this->_op($m[1], $m[2]);
+            },
+         ];
 
         foreach ($repl as $pattern => $func) {
             $str = preg_replace_callback($pattern, $func, $str);
         }
 
         $trans = [
-            '.'  => 'echo chr($d[$i]);',
+            '.'  => 'printf("%c", $d[$i]);',
             'l'  => 'for (;$d[$i];--$i);',
             'r'  => 'for (;$d[$i];++$i);',
-            ','  => 'if ($p < $size) $d[$i] = $in[$p++]; else '.
-                    '{$in = array_values(unpack("c*", file_get_contents("php://stdin")));$in[]=0;$d[$i] = $in[$p=0];}',
+            ','  => 'if ($p < $size) { $d[$i] = $in[$p++]; } else '.
+                    '{ $in = array_values(unpack("c*", rtrim(fgets(STDIN)))); $in[]=0; $d[$i] = $in[$p=0]; }',
             'L'  => 'while ($d[$i]) {',
             'R'  => '}',
         ];
@@ -368,4 +387,3 @@ class Processing_BF
     // }}}
 }
 // }}}
-;
