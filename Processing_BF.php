@@ -24,17 +24,27 @@
 
 class Processing_BF
 {
+    /**
+    * Language extensions
+    */
+    private $opts = [];
+
     // {{{ compile()
     /**
      * Program compling
      * @param string $str   BF program code
      * @param string $input input data of BF program
+     * @param bool   $y     enable Y-operator
      *
      * @return string PHP code
      *
      */
-    public function compile($str, $input = '')
+    public function compile($str, $input = '', $y = false)
     {
+        if ($y && function_exists('pcntl_fork')) {
+            $this->opts[] = 'Y';
+        }
+
         return $this->addHeader($this->toPHP($str), $input);
     }
     // }}}
@@ -50,7 +60,7 @@ class Processing_BF
      */
     public function addHeader($str, $input = '')
     {
-        $str = "\$d = array_fill(0, 65535, 0); \$i=0; ".$str;
+        $str = "\$d=array_fill(0, 65535 * 2, 0); \$i=count(\$d)/2; ".$str;
 
         // If input isn't empty we convert it to array of charcodes
         $codes = $input == '' ? [] : unpack('c*', $input);
@@ -89,7 +99,8 @@ class Processing_BF
     protected function _prepare($str)
     {
         // Remove trash chars
-        $str = preg_replace('/[^\-\+\[\]><\,\.]/', '', $str);
+        $opts = implode($this->opts);
+        $str = preg_replace("/[^\-\+\[\]><\,\.{$opts}]/", '', $str);
 
         // Escaping opcodes
         $trans = [
@@ -103,6 +114,7 @@ class Processing_BF
             '>'   => 'p',
             '['   => 'L',
             ']'   => 'R',
+            '.'   => 'E',
         ];
 
         $str = strtr($str, $trans);
@@ -253,6 +265,7 @@ class Processing_BF
         $pos = 0;
         $start = false;
         $clear_end = true;
+        $divider = 0;
 
         $len = strlen($str);
         for ($i = 0; $i<$len; $i++) {
@@ -371,7 +384,7 @@ class Processing_BF
         }
 
         $trans = [
-            '.'  => 'printf("%c", $d[$i]);',
+            'E'  => 'printf("%c", $d[$i]);',
             'l'  => 'for (;$d[$i];--$i);',
             'r'  => 'for (;$d[$i];++$i);',
             ','  => 'if ($p < $size) { $d[$i] = $in[$p++]; } else '.
@@ -380,7 +393,14 @@ class Processing_BF
             'R'  => '}',
         ];
 
-        return strtr($str, $trans);
+        if (in_array('Y', $this->opts) && strpos($str, 'Y') !== false) {
+            $trans['Y'] = '$pid = pcntl_fork(); if ($pid) $d[$i++] = 0; else $d[$i] = 1;';
+            $yend = 'if ($pid) pcntl_wait($status);';
+        } else {
+            $yend = '';
+        }
+
+        return strtr($str, $trans) . $yend;
     }
      // }}}
 
