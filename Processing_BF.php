@@ -25,8 +25,8 @@
 class Processing_BF
 {
     /**
-    * Language extensions
-    */
+     * Language extensions
+     */
     private $opts = [];
 
     // {{{ compile()
@@ -296,20 +296,14 @@ class Processing_BF
                 case 'P':
                     if ($start || $pos) {
                         $op  = $op == 'M' ? '-' : '+';
-                        if ($num == 1) {
-                            $num = '';
-                        } else {
-                            $pow = log($num, 2);
-                            if ((int) $pow == $pow) {
-                                $num = '<<'.$pow;
-                            } else {
-                                $num = '*'.$num;
-                            }
-                        }
 
-                        $out .= '$d[$i'.$pos.']'.$op.'=$d[$i]'.$num.';';
+                        $out .= '$d[$i'.$pos.']'.$op.'=$d[$i]*'.$num.';';
                     } else {
                         $start = $pos == 0;
+
+                        if ($start) {
+                            $divider += $num;
+                        }
                     }
                     break;
 
@@ -328,6 +322,20 @@ class Processing_BF
         if ($start) {
             if ($clear_end) {
                 $out .= '$d[$i]=0;';
+            }
+
+            if ($divider > 1) {
+                $out = preg_replace_callback('/\*(\d+)/S', function ($m) use ($divider) {
+                    $num = $m[1] / $divider;
+
+                    if ($num === 1) {
+                        return '';
+                    }
+
+                    return $num == (int) $num ? '*'.$num : '/'.(1 / $num);
+                }, $out);
+            } else {
+                $out = str_replace('*1;', ';', $out);
             }
 
             return $out;
@@ -400,7 +408,7 @@ class Processing_BF
             $yend = '';
         }
 
-        return strtr($str, $trans) . $yend;
+        return strtr($str, $trans).$yend;
     }
      // }}}
 
