@@ -63,13 +63,9 @@ class Processing_BF
         $str = "\$d=array_fill(0, 65535 * 2, 0); \$i=count(\$d)/2; ".$str;
 
         // If input isn't empty we convert it to array of charcodes
-        $codes = $input == '' ? [] : unpack('c*', $input);
-        $size  = count($codes);
+        $codes = $input == '' ? [] : unpack('c*', $input . "\0");
 
-        // End of string in BF
-        $codes[] = '$p=0';
-
-        return "\$size=$size; \$in=[".implode(', ', $codes).']; '.$str;
+        return '$in=['.implode(', ', $codes).']; '.$str;
     }
     // }}}
 
@@ -411,8 +407,8 @@ class Processing_BF
             'E'  => 'printf("%c", $d[$i]);',
             'l'  => 'for (;$d[$i];--$i);',
             'r'  => 'for (;$d[$i];++$i);',
-            ','  => 'if ($p < $size) { $d[$i] = $in[$p++]; } else '.
-                    '{ $in = array_values(unpack("c*", rtrim(fgets(STDIN)))); $in[]=0; $d[$i] = $in[$p=0]; }',
+            ','  => 'if (!$in) { $in = array_values(unpack("c*", rtrim(fgets(STDIN)))); $in[]=0; }; '.
+                    '$d[$i] = array_shift($in);',
             'L'  => 'while ($d[$i]) {',
             'R'  => '}',
         ];
