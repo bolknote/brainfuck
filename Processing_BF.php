@@ -113,7 +113,7 @@ class Processing_BF
         $str = strtr($str, $trans);
 
         // Remove useless first cycle
-        /*$str = preg_replace('/^[lrcmp]* L ( ( (?>[^LR]+) | (?R) )* ) R/x', '', $str);*/
+        $str = preg_replace('/^[lrcmp]* L ( ( (?>[^LR]+) | (?R) )* ) R/x', '', $str);
 
         // group + and -, > and <
         foreach (['MP', 'mp'] as $set) {
@@ -266,8 +266,6 @@ class Processing_BF
      */
     protected function _cycles_op($str)
     {
-        var_dump($str);
-
         // Is loop entry point concur with exit point?
         $brack = ['m' => 0, 'p' => 0];
 
