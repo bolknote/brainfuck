@@ -39,12 +39,9 @@ class Processing_BF
      * @return string PHP code
      *
      */
-    public function compile($str, $input = '', $y = false)
+    public function compile($str, $input = '', $extensions = [])
     {
-        if ($y && function_exists('pcntl_fork')) {
-            $this->opts[] = 'Y';
-        }
-
+        $this->opts = $extensions;
         return $this->addHeader($this->toPHP($str), $input);
     }
     // }}}
@@ -116,7 +113,7 @@ class Processing_BF
         $str = strtr($str, $trans);
 
         // Remove useless first cycle
-        $str = preg_replace('/^[lrcmp]* L ( ( (?>[^LR]+) | (?R) )* ) R/x', '', $str);
+        /*$str = preg_replace('/^[lrcmp]* L ( ( (?>[^LR]+) | (?R) )* ) R/x', '', $str);*/
 
         // group + and -, > and <
         foreach (['MP', 'mp'] as $set) {
@@ -269,6 +266,8 @@ class Processing_BF
      */
     protected function _cycles_op($str)
     {
+        var_dump($str);
+
         // Is loop entry point concur with exit point?
         $brack = ['m' => 0, 'p' => 0];
 
@@ -320,7 +319,7 @@ class Processing_BF
                     if ($start || $pos) {
                         $op  = $op == 'M' ? '-' : '+';
 
-                        $out .= '$d[$i'.$pos.']'.$op.'=$d[$i]*('.$num.');';
+                        $out .= '$d[$i'.$pos.']'.$op.'=abs($d[$i])*('.$num.');';
                     } else {
                         $start = $pos == 0;
 
@@ -411,10 +410,11 @@ class Processing_BF
                     '$d[$i] = array_shift($in);',
             'L'  => 'while ($d[$i]) {',
             'R'  => '}',
+            '#'  => 'echo "$i: $d[$i]\n";',
+            'Y'  => '$pid = pcntl_fork(); if ($pid) $d[$i++] = 0; else $d[$i] = 1;',
         ];
 
         if (in_array('Y', $this->opts) && strpos($str, 'Y') !== false) {
-            $trans['Y'] = '$pid = pcntl_fork(); if ($pid) $d[$i++] = 0; else $d[$i] = 1;';
             $yend = 'if ($pid) pcntl_wait($status);';
         } else {
             $yend = '';
