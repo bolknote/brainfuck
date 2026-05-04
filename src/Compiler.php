@@ -6,24 +6,34 @@ namespace BolkNote\Brainfuck;
 
 class Compiler
 {
-    private const int TAPE_SIZE = 65535 * 2;
+    public const int CELL_BITS_UNBOUNDED = 0;
+    public const int CELL_BITS_8 = 8;
+    public const int CELL_BITS_16 = 16;
+    public const int DEFAULT_CELL_BITS = self::CELL_BITS_8;
+
+    private const int TAPE_EXTENT = 65535;
+    private const int TAPE_SIZE = self::TAPE_EXTENT * 2;
     private const int MAX_REPEAT = 99;
 
-    /** Bitmask applied to every cell write: 0xFF for 8-bit, 0xFFFF for 16-bit, 0 = no wrap. */
+    /** 8-bit cell mask; also limits `chr()` argument to a byte (see compileCode `E`). */
+    private const int MASK_BYTE = 0xFF;
+    private const int MASK_WORD = 0xFFFF;
+
+    /** Bitmask applied to every cell write: MASK_BYTE / MASK_WORD, or 0 = no wrap. */
     private readonly int $cellMask;
 
     /**
      * @param int $cellBits Cell width in bits.
-     *                       8  — standard BF (default): cells wrap at 256.
-     *                       16 — extended BF: cells wrap at 65536.
-     *                       0  — no wrapping: cells are unbounded PHP integers.
+     *                       CELL_BITS_8  — standard BF (default): cells wrap at 256.
+     *                       CELL_BITS_16 — extended BF: cells wrap at 65536.
+     *                       CELL_BITS_UNBOUNDED — no wrapping: unbounded PHP integers.
      */
-    public function __construct(int $cellBits = 8)
+    public function __construct(int $cellBits = self::DEFAULT_CELL_BITS)
     {
         $this->cellMask = match ($cellBits) {
-            8       => 0xFF,
-            16      => 0xFFFF,
-            0       => 0,
+            self::CELL_BITS_8        => self::MASK_BYTE,
+            self::CELL_BITS_16       => self::MASK_WORD,
+            self::CELL_BITS_UNBOUNDED => 0,
             default => throw new \InvalidArgumentException('cellBits must be 0, 8, or 16'),
         };
     }
@@ -610,7 +620,7 @@ class Compiler
             : 'array_shift($in)';
 
         return strtr($str, [
-            'E' => 'echo chr($d[$i]&255);',
+            'E' => 'echo chr($d[$i]&' . self::MASK_BYTE . ');',
             'l' => 'for(;$d[$i];--$i);',
             'r' => 'for(;$d[$i];++$i);',
             ',' => 'if(!$in){$in=array_values(unpack("c*",rtrim(fgets(STDIN))));$in[]=0;};$d[$i]=' . $readInput . ';',

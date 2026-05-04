@@ -10,7 +10,7 @@ require __DIR__ . '/vendor/autoload.php';
 
 use BolkNote\Brainfuck\Compiler;
 
-$cellBits = 8;
+$cellBits = Compiler::DEFAULT_CELL_BITS;
 $args = [];
 $rawArgv = $_SERVER['argv'] ?? null;
 $cliArgv = is_array($rawArgv) ? $rawArgv : [];
