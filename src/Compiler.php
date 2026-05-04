@@ -411,9 +411,17 @@ class Compiler
                 $op  = $str[$k];
             }
 
-            if ($op === 'p') { $pos += $num; continue; }
-            if ($op === 'm') { $pos -= $num; continue; }
-            if ($pos === 0)  { continue; } // overridden by final $d[$i]=0
+            if ($op === 'p') {
+                $pos += $num;
+                continue;
+            }
+            if ($op === 'm') {
+                $pos -= $num;
+                continue;
+            }
+            if ($pos === 0) {
+                continue;
+            } // overridden by final $d[$i]=0
 
             $posStr = $pos > 0 ? '+' . $pos : (string) $pos;
             $ref    = '$d[$i' . $posStr . ']';
@@ -456,9 +464,17 @@ class Compiler
                 $op  = $str[$k];
             }
 
-            if ($op === 'p') { $pos += $num; continue; }
-            if ($op === 'm') { $pos -= $num; continue; }
-            if ($op === 'M' && $pos === 0) { continue; } // source decrement, handled
+            if ($op === 'p') {
+                $pos += $num;
+                continue;
+            }
+            if ($op === 'm') {
+                $pos -= $num;
+                continue;
+            }
+            if ($op === 'M' && $pos === 0) {
+                continue;
+            } // source decrement, handled
 
             // Any other op at pos=0 is not supported (e.g. P at pos=0 alongside M).
             if ($pos === 0) {
