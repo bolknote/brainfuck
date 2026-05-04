@@ -142,6 +142,18 @@ class CompilerTest extends TestCase
         $this->assertStringContainsString('pcntl_fork', $this->compiler->toPHP('Y'));
     }
 
+    public function testForkFollowsBrainforkSpec(): void
+    {
+        // Per the Brainfork spec (https://esolangs.org/wiki/Brainfork):
+        //   parent: current cell → 0, pointer unchanged
+        //   child:  pointer moves +1, new cell → 1
+        $code = $this->compiler->toPHP('Y');
+        // Parent sets current cell to 0 without moving the pointer.
+        $this->assertStringContainsString('$d[$i]=0', $code);
+        // Child increments pointer first, then sets new cell to 1.
+        $this->assertStringContainsString('$d[++$i]=1', $code);
+    }
+
     /**
      * @return array<string, array{string, string, string}>
      */

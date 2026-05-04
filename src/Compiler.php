@@ -917,7 +917,7 @@ class Compiler
             'L' => 'while($d[$i]){',
             'R' => '}',
             '#' => 'echo "$i: $d[$i]\n";',
-            'Y' => '$pid=pcntl_fork();if($pid)$d[$i++]=0;else $d[$i]=1;',
+            'Y' => '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;',
         ]);
 
         return $str;
