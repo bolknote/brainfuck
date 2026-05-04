@@ -46,9 +46,8 @@ class Compiler
      */
     public function addHeader(string $str, string $input = ''): string
     {
-        // Tape start is precomputed; $ob accumulates all output for a single flush at the end.
         $tapeStart = intdiv(self::TAPE_SIZE, 2);
-        $str = '$d=array_fill(0,' . self::TAPE_SIZE . ',0);$i=' . $tapeStart . ';$ob="";' . $str . 'echo $ob;';
+        $str = '$d=array_fill(0,' . self::TAPE_SIZE . ',0);$i=' . $tapeStart . ';' . $str;
 
         $codes = $input === '' ? [] : (unpack('c*', $input . "\0") ?: []);
 
@@ -533,7 +532,7 @@ class Compiler
             : 'array_shift($in)';
 
         return strtr($str, [
-            'E' => '$ob.=chr($d[$i]&255);',
+            'E' => 'echo chr($d[$i]&255);',
             'l' => 'for(;$d[$i];--$i);',
             'r' => 'for(;$d[$i];++$i);',
             ',' => 'if(!$in){$in=array_values(unpack("c*",rtrim(fgets(STDIN))));$in[]=0;};$d[$i]=' . $readInput . ';',

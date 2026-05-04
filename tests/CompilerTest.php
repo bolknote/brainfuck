@@ -132,6 +132,11 @@ class CompilerTest extends TestCase
         $this->assertSame("65535: 0\n", $this->execute('#'));
     }
 
+    public function testOutputIsNotBufferedPastDebugOpcode(): void
+    {
+        $this->assertSame("A65535: 65\n", $this->execute(str_repeat('+', 65) . '.#'));
+    }
+
     public function testForkOpcodeIsPreservedDuringCompilation(): void
     {
         $this->assertStringContainsString('pcntl_fork', $this->compiler->toPHP('Y'));
