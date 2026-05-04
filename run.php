@@ -12,8 +12,9 @@ use BolkNote\Brainfuck\Compiler;
 
 $cellBits = 8;
 $args = [];
-foreach (array_slice($argv, 1) as $arg) {
-    if (preg_match('/^--bits=(\d+)$/', $arg, $m)) {
+$cliArgv = $_SERVER['argv'] ?? [];
+foreach (array_slice($cliArgv, 1) as $arg) {
+    if (preg_match('/^--bits=(\d+)$/', (string) $arg, $m)) {
         $cellBits = (int) $m[1];
     } else {
         $args[] = $arg;

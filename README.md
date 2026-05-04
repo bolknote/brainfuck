@@ -103,12 +103,13 @@ The compiler applies several passes before generating PHP:
 ```bash
 composer test
 # or directly:
-vendor/bin/phpunit
+vendor/bin/phpunit --configuration=config/phpunit.xml
 ```
 
 ## Project structure
 
 ```
+config/           — PHPStan, PHPUnit, PHP-CS-Fixer, Rector
 src/
   Compiler.php    — BF → PHP compiler class
 tests/

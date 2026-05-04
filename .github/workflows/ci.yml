@@ -22,13 +22,13 @@ jobs:
         run: composer install --no-interaction --prefer-dist
 
       - name: PHPStan
-        run: vendor/bin/phpstan analyse --no-progress
+        run: vendor/bin/phpstan analyse --no-progress --configuration=config/phpstan.neon
 
       - name: PHP-CS-Fixer (dry run)
-        run: vendor/bin/php-cs-fixer fix --dry-run --diff --config=.php-cs-fixer.dist.php
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff --config=config/php-cs-fixer.dist.php
 
       - name: Rector (dry run)
-        run: vendor/bin/rector process --dry-run --no-progress-bar
+        run: vendor/bin/rector process --dry-run --no-progress-bar --config=config/rector.php
 
       - name: PHPUnit
-        run: vendor/bin/phpunit
+        run: vendor/bin/phpunit --configuration=config/phpunit.xml

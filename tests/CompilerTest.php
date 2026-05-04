@@ -223,7 +223,8 @@ class CompilerTest extends TestCase
         $level = ob_get_level();
         ob_start();
         eval($code);
-        $out = ob_get_clean() ?? '';
+        $out = ob_get_clean();
+        $this->assertNotFalse($out);
         $this->assertStringContainsString(': -1', $out);
     }
 
