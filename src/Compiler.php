@@ -321,6 +321,19 @@ class Compiler
      */
     protected function cyclesOp(string $str): string
     {
+        // Bodies containing nested L...R require a separate analyser that can
+        // recognise canonical multiplication patterns. Try it first; if it
+        // declines, fall back to the flat-body path which (re-)encodes the
+        // outer loop as a `while`.
+        if (str_contains($str, 'L')) {
+            $optimised = $this->tryMulOpt($str);
+            if ($optimised !== null) {
+                return $optimised;
+            }
+
+            return 'L' . $str . 'R';
+        }
+
         // Pointer moves must balance: the body must leave the pointer at its
         // starting position, otherwise the loop condition cell changes each pass.
         $moves = ['m' => 0, 'p' => 0];
@@ -397,6 +410,241 @@ class Compiler
         }
 
         return 'L' . $str . 'R';
+    }
+
+    /**
+     * Tokenise an outer loop body, recognising one level of nested L...R as
+     * atomic tokens. Returns null if the body cannot be tokenised (mismatched
+     * brackets, deeper nesting, truncated count prefix).
+     *
+     * @return list<array{op: string, num?: int, inner?: string}>|null
+     */
+    private function parseLoopTokens(string $body): ?array
+    {
+        $tokens = [];
+        $len = strlen($body);
+        $k = 0;
+
+        while ($k < $len) {
+            $c = $body[$k];
+
+            if ($c >= '0' && $c <= '9') {
+                if ($k + 2 >= $len) {
+                    return null;
+                }
+                $num = (int) substr($body, $k, 2);
+                $tokens[] = ['op' => $body[$k + 2], 'num' => $num];
+                $k += 3;
+                continue;
+            }
+
+            if ($c === 'L') {
+                // Find matching R; only one level of nesting is supported, so
+                // the inner body must not contain another `L`.
+                $j = $k + 1;
+                while ($j < $len && $body[$j] !== 'R') {
+                    if ($body[$j] === 'L') {
+                        return null;
+                    }
+                    $j++;
+                }
+                if ($j >= $len) {
+                    return null;
+                }
+                $tokens[] = ['op' => 'L', 'inner' => substr($body, $k + 1, $j - $k - 1)];
+                $k = $j + 1;
+                continue;
+            }
+
+            $tokens[] = ['op' => $c, 'num' => 1];
+            $k++;
+        }
+
+        return $tokens;
+    }
+
+    /**
+     * Analyse a flat (non-nested) loop body that should be a "scatter" loop:
+     *   - starts with `M` of count 1 (the controller decrement)
+     *   - distributes the source value to other relative offsets via P/M
+     *   - all pointer moves balance to a net delta of 0
+     *
+     * Returns the per-iteration distribution as `['targets' => [offset => factor]]`
+     * (factors are signed), or null if the body is not a pure scatter.
+     *
+     * @return array{targets: array<int, int>}|null
+     */
+    private function analyseFlatScatter(string $body): ?array
+    {
+        $tokens = $this->parseLoopTokens($body);
+        if ($tokens === null) {
+            return null;
+        }
+
+        if (count($tokens) < 1 || $tokens[0]['op'] !== 'M' || ($tokens[0]['num'] ?? 0) !== 1) {
+            return null;
+        }
+
+        $pos = 0;
+        $targets = [];
+
+        foreach ($tokens as $idx => $t) {
+            if ($idx === 0) {
+                continue; // skip controller
+            }
+
+            $op = $t['op'];
+            $num = $t['num'] ?? 1;
+
+            if ($op === 'p') {
+                $pos += $num;
+            } elseif ($op === 'm') {
+                $pos -= $num;
+            } elseif ($op === 'P' || $op === 'M') {
+                if ($pos === 0) {
+                    return null; // extra source modification breaks the scatter model
+                }
+                $targets[$pos] = ($targets[$pos] ?? 0) + ($op === 'P' ? $num : -$num);
+            } else {
+                return null; // L, c, etc. not allowed inside a scatter body
+            }
+        }
+
+        if ($pos !== 0) {
+            return null;
+        }
+
+        $targets = array_filter($targets, static fn (int $v): bool => $v !== 0);
+        if ($targets === []) {
+            return null;
+        }
+
+        return ['targets' => $targets];
+    }
+
+    /**
+     * Recognise the canonical Brainfuck multiplication pattern:
+     *
+     *   [- moves L_scatter R moves L_gather R moves]
+     *
+     * Outer body: leading `M` is the controller; pointer moves balance to 0;
+     * exactly two nested loops:
+     *   1. scatter — clears source B and adds B to two or more targets
+     *   2. gather  — moves one of the scatter targets (the temp T) back to B
+     *
+     * Net effect after `A` outer iterations:
+     *   cell[0]            = 0           (controller drained)
+     *   cell[B_pos]        unchanged     (cleared by scatter, restored by gather)
+     *   cell[non-temp tgt] += A * B      (one iteration adds B; total adds A·B)
+     *   cell[T_pos]        = 0           (cleared by gather)
+     *
+     * Returns optimised straight-line PHP for the entire outer loop, or null
+     * if the body does not fit this shape.
+     */
+    private function tryMulOpt(string $body): ?string
+    {
+        $tokens = $this->parseLoopTokens($body);
+        if ($tokens === null) {
+            return null;
+        }
+
+        // First token: controller M with count 1.
+        if (count($tokens) < 4 || $tokens[0]['op'] !== 'M' || ($tokens[0]['num'] ?? 0) !== 1) {
+            return null;
+        }
+
+        $pos = 0;
+        /** @var array{pos: int, targets: array<int, int>}|null $scatter */
+        $scatter = null;
+        /** @var array{pos: int, target: int}|null $gather */
+        $gather = null;
+
+        $count = count($tokens);
+        for ($i = 1; $i < $count; $i++) {
+            $t = $tokens[$i];
+            $op = $t['op'];
+            $num = $t['num'] ?? 1;
+
+            if ($op === 'p') {
+                $pos += $num;
+                continue;
+            }
+            if ($op === 'm') {
+                $pos -= $num;
+                continue;
+            }
+            if ($op !== 'L') {
+                return null; // outer body must contain only moves and inner loops
+            }
+
+            $eff = $this->analyseFlatScatter($t['inner'] ?? '');
+            if ($eff === null) {
+                return null;
+            }
+
+            if ($scatter === null) {
+                if (count($eff['targets']) < 2) {
+                    return null; // a real scatter must distribute to 2+ cells
+                }
+                $absTargets = [];
+                foreach ($eff['targets'] as $rel => $factor) {
+                    $absTargets[$pos + $rel] = $factor;
+                }
+                $scatter = ['pos' => $pos, 'targets' => $absTargets];
+                continue;
+            }
+
+            if ($gather !== null) {
+                return null; // more than two nested loops
+            }
+
+            // The gather must be a single-target move-loop (factor 1) whose
+            // target is the original scatter source (preserves B), and whose
+            // own source position was one of the scatter's targets (the temp).
+            if (count($eff['targets']) !== 1) {
+                return null;
+            }
+            $relTarget = array_key_first($eff['targets']);
+            $factor = $eff['targets'][$relTarget];
+            if ($factor !== 1) {
+                return null;
+            }
+            $absTarget = $pos + $relTarget;
+            if (!isset($scatter['targets'][$pos])) {
+                return null; // gather source isn't a scatter target → not a temp
+            }
+            if ($absTarget !== $scatter['pos']) {
+                return null; // gather doesn't restore B
+            }
+            $gather = ['pos' => $pos, 'target' => $absTarget];
+        }
+
+        if ($pos !== 0 || $scatter === null || $gather === null) {
+            return null;
+        }
+
+        // Net effect: every scatter target except the temp accumulates A·B.
+        $bPos = $scatter['pos'];
+        $tempPos = $gather['pos'];
+        $bRefSuffix = $bPos > 0 ? '+' . $bPos : ($bPos === 0 ? '' : (string) $bPos);
+
+        $out = '';
+        foreach ($scatter['targets'] as $absPos => $coef) {
+            if ($absPos === $tempPos) {
+                continue; // restored by gather
+            }
+            $posStr = $absPos > 0 ? '+' . $absPos : (string) $absPos;
+            $factor = $coef === 1 ? '' : ('*' . $coef);
+            if ($this->cellMask !== self::MASK_INT) {
+                $out .= '$d[$i' . $posStr . ']=($d[$i' . $posStr . ']+$d[$i]*$d[$i'
+                    . $bRefSuffix . ']' . $factor . ')&' . $this->cellMask . ';';
+            } else {
+                $out .= '$d[$i' . $posStr . ']+=$d[$i]*$d[$i' . $bRefSuffix . ']' . $factor . ';';
+            }
+        }
+        $out .= '$d[$i]=0;';
+
+        return $out;
     }
 
     /**
@@ -579,8 +827,17 @@ class Compiler
     protected function compileCode(string $str): string
     {
         $patterns = [
-            // [>>>+<<-<]  — loop optimisation (must run before constant-load fold so that
-            // cyclesOp can inspect raw opcodes like `c` inside loop bodies)
+            // First pass: outer loops with one level of nesting.
+            // Catches multiplication patterns like [->[->+>+<<]>>[-<<+>>]<<<]
+            // before the inner [->+>+<<] loops are converted to PHP. cyclesOp
+            // detects the `L` opcode in the body and dispatches to tryMulOpt.
+            // If it can't optimise, it returns `L...R` unchanged so the second
+            // pass can still process the inner loops as while-loops.
+            '/L((?:[MPmpc\d]|L[MPmpc\d]+R)+)R/'
+                => fn (array $m): string => $this->cyclesOp(self::pcreGroup($m, 1)),
+
+            // Second pass: innermost flat loops (no nested L/R).
+            // [>>>+<<-<] → straight-line arithmetic.
             '/L([MPmpc\d]+)R/' => fn (array $m): string => $this->cyclesOp(self::pcreGroup($m, 1)),
 
             // [-]+N, [-]-N — cell is known zero after clear; fold into a direct constant assignment.

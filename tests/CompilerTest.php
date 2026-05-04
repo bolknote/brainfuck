@@ -487,4 +487,187 @@ class CompilerTest extends TestCase
         $this->assertStringContainsString('$d[$i]=5;', $code);
         $this->assertStringNotContainsString('$d[$i]+5', $code);
     }
+
+    // -----------------------------------------------------------------------
+    // Multiplication-pattern optimisation (nested copy loops)
+    //
+    // Canonical BF multiplication preserves the source operand B by copying
+    // it through a temp T:
+    //
+    //   [->[->+>+<<]>>[-<<+>>]<<<]
+    //   |  |          |          |
+    //   |  inner1     inner2     restore pointer
+    //   |  B → C,T    T → B
+    //   A--   B=0     T=0
+    //
+    // After full loop: A = 0, B preserved, C += A * B, T = 0.
+    // Pointer net delta inside the body must be 0.
+    //
+    // The optimiser should fold the entire outer loop into straight-line PHP:
+    //   $d[$i+2] += $d[$i] * $d[$i+1];   // C += A * B
+    //   $d[$i]    = 0;                   // A := 0
+    // -----------------------------------------------------------------------
+
+    private const MUL_PATTERN = '[->[->+>+<<]>>[-<<+>>]<<<]';
+
+    /**
+     * Behaviour: 5 * 13 = 65 → 'A'.
+     *
+     * Tape layout: [A B C T]
+     * Setup: cell[0]=5 (A), cell[1]=13 (B), cell[2]=0 (C), cell[3]=0 (T).
+     * After the multiplier: A=0, B=13, C=65, T=0.
+     * Move to C and print → 'A'.
+     */
+    public function testMultiplyBasic(): void
+    {
+        $bf = str_repeat('+', 5)             // A = 5
+            . '>' . str_repeat('+', 13)      // B = 13
+            . '<'                            // back to A
+            . self::MUL_PATTERN              // C = A * B; A = 0
+            . '>>.';                         // print C
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * Multiplication with operands swapped: 13 * 5 = 65 → 'A'.
+     */
+    public function testMultiplyLargeOperands(): void
+    {
+        $bf = str_repeat('+', 13)
+            . '>' . str_repeat('+', 5)
+            . '<'
+            . self::MUL_PATTERN
+            . '>>.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * Multiplication where the source is zero must do nothing.
+     * cell[2] starts at 65; A=0 → loop never enters → cell[2] stays 65 → 'A'.
+     */
+    public function testMultiplySkippedWhenSourceZero(): void
+    {
+        $bf = '>' . str_repeat('+', 7)              // B = 7
+            . '<'                                    // A = 0
+            . self::MUL_PATTERN                      // dead — A is zero
+            . '>>' . str_repeat('+', 65) . '.';      // cell[2] = 65 → 'A'
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * After multiplication B must be preserved. Run multiply, then reuse B
+     * to overwrite C: 0 (A) → 13 (B preserved) → 13 (move B to C) → +52 = 65 → 'A'.
+     */
+    public function testMultiplyPreservesSource(): void
+    {
+        $bf = str_repeat('+', 5)
+            . '>' . str_repeat('+', 13)
+            . '<'
+            . self::MUL_PATTERN          // A=0, B=13, C=65, T=0
+            . '>'                        // at B
+            . '[-]'                      // clear B (we only want to verify it WAS preserved)
+            . '>'                        // at C
+            . '[-]>[-]<<'                // wipe everything to start fresh; this isn't ideal, just check via behaviour below
+            . '+'                        // not used
+            . '';
+        // Better: just directly verify B is non-zero after multiply.
+        $bf = str_repeat('+', 5)
+            . '>' . str_repeat('+', 13)
+            . '<'
+            . self::MUL_PATTERN          // A=0, B=13, C=65, T=0
+            . '>>>>'                     // skip A,B,C,T; pointer at cell[4]=0
+            . '+'                        // cell[4] = 1
+            . '<<<'                      // pointer at B
+            . '+++++++++++++++++++++++++++++++++++++++++++++++++++'  // 51 +
+            . '.';                       // B = 13+51 = 64? No — we want 'A' (65)
+        // 13 + 52 = 65
+        $bf = str_repeat('+', 5)
+            . '>' . str_repeat('+', 13)
+            . '<'
+            . self::MUL_PATTERN
+            . '>'                        // pointer at B (preserved value 13)
+            . str_repeat('+', 52)        // B = 13 + 52 = 65
+            . '.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * Generated code: the outer multiply loop must NOT remain as a `while`.
+     * Inner copy-loops are already flat-optimised; the optimiser must
+     * collapse the outer iteration too.
+     */
+    public function testMultiplyDoesNotEmitOuterWhile(): void
+    {
+        $code = $this->compiler->toPHP('+' . self::MUL_PATTERN);
+        $this->assertStringNotContainsString('while', $code);
+    }
+
+    /**
+     * Generated code: the destination cell must be written using a
+     * multiplication of two source cells (e.g. `$d[$i]*$d[$i+1]`).
+     */
+    public function testMultiplyEmitsMulExpression(): void
+    {
+        $code = $this->compiler->toPHP('+' . self::MUL_PATTERN);
+        $this->assertMatchesRegularExpression(
+            '/\$d\[\$i\+2\]\s*=.*\$d\[\$i\].*\*.*\$d\[\$i\+1\]/',
+            $code,
+        );
+    }
+
+    /**
+     * Multiplication that is NOT canonical (e.g. unbalanced moves) must be
+     * left as a regular while-loop and still produce correct results.
+     */
+    public function testNonCanonicalMultiplyStaysCorrect(): void
+    {
+        // [->>+<<] is not multiplication - it's a single copy. Result of
+        // running it on cell[0]=5 is: cell[2] += 5, cell[0] = 0.
+        // Adding 60 to cell[2] gives 65 → 'A'.
+        $bf = str_repeat('+', 5) . '[->>+<<]>>' . str_repeat('+', 60) . '.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * Three-level nesting must not be misanalysed: it should fall back to a
+     * while-loop. The optimiser should not crash or produce wrong code.
+     *
+     * Pattern: `[->[->[-]<]<]` — outer drains cell[0], each iter does nothing
+     * (middle and inner loops are dead because cell[1] and cell[2] are zero).
+     * After: cell[0] = 0; +65; . → 'A'.
+     */
+    public function testTripleNestedLoopFallsBack(): void
+    {
+        $bf = '+++++[->[->[-]<]<]' . str_repeat('+', 65) . '.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * The 16-bit mode must produce the same multiplication output. The
+     * generated code differs (mask is 65535 instead of 255) but cell values
+     * up to 256·256 fit cleanly. Verify a 13×5 = 65 multiplication.
+     */
+    public function testMultiply16Bit(): void
+    {
+        $bf = str_repeat('+', 13)
+            . '>' . str_repeat('+', 5)
+            . '<'
+            . self::MUL_PATTERN
+            . '>>.';
+        $this->assertSame('A', $this->executeWith(16, $bf));
+    }
+
+    /**
+     * After multiplication, T (the temp) must be zero — verify by reading
+     * cell[3] via `#` debug print: it should print "3: 0".
+     */
+    public function testMultiplyTempIsZeroed(): void
+    {
+        $bf = str_repeat('+', 5)
+            . '>' . str_repeat('+', 13)
+            . '<'
+            . self::MUL_PATTERN
+            . '>>>#';
+        $this->assertStringContainsString(': 0', $this->execute($bf));
+    }
 }
