@@ -24,19 +24,27 @@ class Compiler
     private readonly int $cellMask;
 
     /**
-     * @param int $cellBits Cell width in bits.
-     *                       CELL_BITS_8  — standard BF (default): cells wrap at 256.
-     *                       CELL_BITS_16 — extended BF: cells wrap at 65536.
-     *                       CELL_BITS_UNBOUNDED — cells wrap at PHP_INT_MAX.
+     * When true, opcode `Y` is recognised ([Brainfork](https://esolangs.org/wiki/Brainfork): fork via `pcntl_fork()`).
+     * When false, `Y` is stripped like any non-BF character (pure Brainfuck).
      */
-    public function __construct(int $cellBits = self::DEFAULT_CELL_BITS)
+    private readonly bool $brainfork;
+
+    /**
+     * @param int  $cellBits  Cell width in bits.
+     *                        CELL_BITS_8  — standard BF (default): cells wrap at 256.
+     *                        CELL_BITS_16 — extended BF: cells wrap at 65536.
+     *                        CELL_BITS_UNBOUNDED — cells wrap at PHP_INT_MAX.
+     * @param bool $brainfork If true, enable Brainfork `Y` fork opcode; if false, ignore `Y`.
+     */
+    public function __construct(int $cellBits = self::DEFAULT_CELL_BITS, bool $brainfork = false)
     {
-        $this->cellMask = match ($cellBits) {
+        $this->cellMask   = match ($cellBits) {
             self::CELL_BITS_8         => self::MASK_BYTE,
             self::CELL_BITS_16        => self::MASK_WORD,
             self::CELL_BITS_UNBOUNDED => self::MASK_INT,
             default => throw new \InvalidArgumentException('cellBits must be 0, 8, or 16'),
         };
+        $this->brainfork = $brainfork;
     }
 
     /**
@@ -92,7 +100,8 @@ class Compiler
      */
     protected function prepare(string $str): string
     {
-        $str = preg_replace("/[^\-+\[\]><,.#Y]+/", '', $str) ?? '';
+        $forkChars = $this->brainfork ? 'Y' : '';
+        $str       = preg_replace("/[^\\-+\\[\\]><,.#{$forkChars}]+/", '', $str) ?? '';
 
         $trans = [
             '[<]' => 'l',
@@ -909,7 +918,7 @@ class Compiler
 
         $readInput = 'array_shift($in)&' . $this->cellMask;
 
-        $str = strtr($str, [
+        $map = [
             'E' => 'echo chr($d[$i]&' . self::MASK_BYTE . ');',
             'l' => 'for(;$d[$i];--$i);',
             'r' => 'for(;$d[$i];++$i);',
@@ -917,8 +926,12 @@ class Compiler
             'L' => 'while($d[$i]){',
             'R' => '}',
             '#' => 'echo "$i: $d[$i]\n";',
-            'Y' => '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;',
-        ]);
+        ];
+        if ($this->brainfork) {
+            $map['Y'] = '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;';
+        }
+
+        $str = strtr($str, $map);
 
         return $str;
     }

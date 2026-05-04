@@ -10,23 +10,26 @@ require __DIR__ . '/vendor/autoload.php';
 
 use BolkNote\Brainfuck\Compiler;
 
-$cellBits = Compiler::DEFAULT_CELL_BITS;
-$args = [];
-$rawArgv = $_SERVER['argv'] ?? null;
-$cliArgv = is_array($rawArgv) ? $rawArgv : [];
+$cellBits  = Compiler::DEFAULT_CELL_BITS;
+$brainfork = false;
+$args      = [];
+$rawArgv   = $_SERVER['argv'] ?? null;
+$cliArgv   = is_array($rawArgv) ? $rawArgv : [];
 foreach (array_slice($cliArgv, 1) as $arg) {
     if (!is_string($arg)) {
         continue;
     }
     if (preg_match('/^--bits=(\d+)$/', $arg, $m)) {
         $cellBits = (int) $m[1];
+    } elseif ($arg === '-Y' || $arg === '--fork' || $arg === '--brainfork') {
+        $brainfork = true;
     } else {
         $args[] = $arg;
     }
 }
 
 if ($args === [] || $args[0] === '') {
-    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] <file.bf>\n");
+    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] <file.bf>\n");
     exit(1);
 }
 
@@ -37,7 +40,7 @@ if ($source === false) {
     exit(1);
 }
 
-$compiler = new Compiler($cellBits);
+$compiler = new Compiler($cellBits, $brainfork);
 $code = $compiler->compile($source);
 
 eval($code);

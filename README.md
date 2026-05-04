@@ -21,6 +21,8 @@ composer install
 
 ```bash
 php run.php samples/prog/hello_world.b
+# Brainfork (`Y` opcode): same flags as many interpreters (e.g. weave.rb `-Y`)
+php run.php -Y fork_example.bf
 ```
 
 ### API
@@ -32,6 +34,9 @@ use BolkNote\Brainfuck\Compiler;
 
 // Standard 8-bit BF (default) — cells wrap at 256
 $compiler = new Compiler();          // same as new Compiler(8)
+
+// Brainfork: enable opcode `Y` (fork); otherwise `Y` is stripped like junk
+$fork = new Compiler(brainfork: true);
 
 // Compile to a PHP string and execute immediately
 eval($compiler->compile(file_get_contents('program.bf')));
@@ -72,15 +77,16 @@ their counter via 8-bit overflow (`0 − 157 = 99` in 8-bit BF) and require
 
 ## Extension opcodes
 
-Beyond standard BF (`+ - < > [ ] . ,`), the compiler recognises two extra opcodes:
+Beyond standard BF (`+ - < > [ ] . ,`), the compiler recognises:
 
 | Opcode | Meaning |
 |--------|---------|
 | `#` | Debug: print current cell index and value (`$i: $d[$i]`) |
-| `Y` | Fork: calls `pcntl_fork()`; parent cell → 0, child cell → 1 |
+| `Y` | Optional ([Brainfork](https://esolangs.org/wiki/Brainfork)): fork via `pcntl_fork()` — parent zeroes the current cell; child moves the pointer right and sets that cell to `1`. |
 
-Because these are real opcodes, they must be embedded directly in the source as
-literal characters (not as BF comments).
+`#` is always accepted. `Y` is accepted only when Brainfork is enabled (`new Compiler(..., brainfork: true)` or CLI `-Y` / `--fork` / `--brainfork`); otherwise `Y` is removed like any non-BF character (same idea as plain BF ignoring unknown symbols).
+
+Requires the PHP **pcntl** extension when compiling or running programs that use `Y`.
 
 ## Optimisations
 
