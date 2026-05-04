@@ -10,7 +10,6 @@ require __DIR__ . '/vendor/autoload.php';
 
 use BolkNote\Brainfuck\Compiler;
 
-// Parse --bits=N option (default: 8)
 $cellBits = 8;
 $args = [];
 foreach (array_slice($argv, 1) as $arg) {

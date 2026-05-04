@@ -159,7 +159,6 @@ class Compiler
     {
         $repeat = (int) $repeat;
 
-        // Pointer-only operations — no cell modification.
         if ($op === 'm') {
             return $repeat ? '$i-=' . $repeat . ';' : '--$i;';
         }
@@ -177,7 +176,6 @@ class Compiler
             return str_repeat($op, 1 + $repeat);
         }
 
-        // Cell increment / decrement — may need wrapping and pointer separation.
         $amount = $repeat ?: 1;
         $operator = $op === 'M' ? '-' : '+';
 
