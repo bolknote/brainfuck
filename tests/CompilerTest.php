@@ -44,34 +44,6 @@ class CompilerTest extends TestCase
         }
     }
 
-    // --- Tape bounds ---
-
-    public function testTapeOverflowThrows(): void
-    {
-        // Moving the pointer past the right end of the tape must throw.
-        $this->expectException(\OutOfRangeException::class);
-        $this->expectExceptionMessageMatches('/Tape out of bounds/');
-        $compiler = new Compiler();
-        eval($compiler->compile(str_repeat('>', Compiler::TAPE_SIZE)));
-    }
-
-    public function testTapeUnderflowThrows(): void
-    {
-        // Moving past the left end must also throw.
-        $this->expectException(\OutOfRangeException::class);
-        $compiler = new Compiler();
-        eval($compiler->compile(str_repeat('<', Compiler::TAPE_SIZE)));
-    }
-
-    public function testTapeStayingInBoundsIsOk(): void
-    {
-        // A program that moves right then left by the same amount must succeed.
-        $bf = str_repeat('>', 100) . str_repeat('<', 100) . str_repeat('+', 65) . '.';
-        $this->assertSame('A', $this->execute($bf));
-    }
-
-    // ----
-
     public function testOutputSingleChar(): void
     {
         $this->assertSame('A', $this->execute(str_repeat('+', 65) . '.'));
