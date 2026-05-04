@@ -216,16 +216,15 @@ class CompilerTest extends TestCase
         $this->assertStringContainsString(': 0', $result);
     }
 
-    public function testNoCellBitsDisablesWrapping(): void
+    public function testNoCellBitsWrapsAtPhpIntMax(): void
     {
         $compiler = new Compiler(0);
         $code = $compiler->compile('-#');
-        $level = ob_get_level();
         ob_start();
         eval($code);
         $out = ob_get_clean();
         $this->assertNotFalse($out);
-        $this->assertStringContainsString(': -1', $out);
+        $this->assertStringContainsString(': ' . PHP_INT_MAX, $out);
     }
 
     public function testInvalidCellBitsThrows(): void
@@ -329,5 +328,163 @@ class CompilerTest extends TestCase
         $code = $this->compiler->toPHP('+[<[-]+>-]');
         $this->assertStringNotContainsString('while', $code);
         $this->assertStringContainsString('if(', $code);
+    }
+
+    // -----------------------------------------------------------------------
+    // Scan loops with step > 1: [>>], [<<<], [>>>>]
+    // -----------------------------------------------------------------------
+
+    /**
+     * [>>] must scan right by 2 and stop on the first zero cell found.
+     *
+     * Tape after setup: cell[0]=1, cell[1]=1, cell[2]=0 (natural), pointer at cell[0].
+     * [>>] → cell[0]=1 → +2 → cell[2]=0 → exit.
+     * >> → cell[4]; +65 → cell[4]=65; . → 'A'.
+     */
+    public function testScanRightStepTwo(): void
+    {
+        // >+<  : cell[1]=1, back to cell[0]
+        // +    : cell[0]=1
+        // [>>] : cell[0]=1 → step to cell[2]=0, stop
+        // >>   : move to cell[4]=0
+        // +×65 : cell[4]=65
+        // .    : print 'A'
+        $this->assertSame('A', $this->execute('>+<+[>>]>>' . str_repeat('+', 65) . '.'));
+    }
+
+    /**
+     * [<<] must scan left by 2 and stop on the first zero cell found.
+     *
+     * Tape: cell[0]=0, cell[2]=1, start at cell[4]=1.
+     * [<<] → cell[4]=1 → −2 → cell[2]=1 → −2 → cell[0]=0 → exit.
+     * +×65 → cell[0]=65; . → 'A'.
+     */
+    public function testScanLeftStepTwo(): void
+    {
+        // >>>>+  : move to cell[4], set cell[4]=1
+        // <<+    : move to cell[2], set cell[2]=1
+        // [<<]   : cell[2]=1 → step to cell[0]=0, stop
+        // +×65   : cell[0]=65
+        // .      : print 'A'
+        $this->assertSame('A', $this->execute('>>>>+<<+[<<]' . str_repeat('+', 65) . '.'));
+    }
+
+    /**
+     * [>>>>] must scan right by 4 steps per iteration (as in hanoi.bf line 162).
+     *
+     * Tape: cell[0]=1, cell[4]=1, cell[8]=0 (natural), pointer at cell[0].
+     * [>>>>] → cell[0]=1 → cell[4]=1 → cell[8]=0 → exit.
+     * >>>>  → cell[12]; +×65 → cell[12]=65; . → 'A'.
+     */
+    public function testScanRightStepFour(): void
+    {
+        // +        : cell[0]=1
+        // >>>>+<<<< : cell[4]=1, back to cell[0]
+        // [>>>>]   : scan to cell[8]=0
+        // +×65     : cell[8]=65 (we land at cell[8], not cell[12])
+        $this->assertSame('A', $this->execute('+>>>>+<<<<[>>>>]' . str_repeat('+', 65) . '.'));
+    }
+
+    /**
+     * A scan loop with step > 1 must not execute when the current cell is zero.
+     */
+    public function testScanSkippedWhenZero(): void
+    {
+        // cell[0]=0 (default) → [>>] never enters → pointer stays at cell[0].
+        // >+<  : cell[1]=65, back to cell[0]=0
+        // [>>] : skipped (cell[0]=0)
+        // >    : move to cell[1]=65
+        // .    : print 'A'
+        $this->assertSame('A', $this->execute('>' . str_repeat('+', 65) . '<[>>]>.'));
+    }
+
+    /**
+     * [>>] must compile to a pointer-stepping loop, not a full arithmetic loop.
+     * The exact loop form (while/for) is an implementation detail; what matters is
+     * that the loop contains $i+=2 and no cell arithmetic.
+     */
+    public function testScanRightStepTwoGeneratesStepLoop(): void
+    {
+        $code = $this->compiler->toPHP('+[>>]');
+        $this->assertStringContainsString('$i+=2', $code);
+        $this->assertStringNotContainsString('$d[$i]+=', $code);
+    }
+
+    /**
+     * [<<<] must compile to a pointer-stepping loop with $i-=3.
+     */
+    public function testScanLeftStepThreeGeneratesStepLoop(): void
+    {
+        $code = $this->compiler->toPHP('+[<<<]');
+        $this->assertStringContainsString('$i-=3', $code);
+        $this->assertStringNotContainsString('$d[$i]-=', $code);
+    }
+
+    // -----------------------------------------------------------------------
+    // Dead loop elimination after cell-zeroing operations
+    // -----------------------------------------------------------------------
+
+    /**
+     * [-][loop] — the second loop never fires (cell = 0 after [-]).
+     * Verified by behaviour: running the dead loop would corrupt cell[1],
+     * but cell[1] must remain untouched.
+     */
+    public function testDeadLoopAfterClear(): void
+    {
+        // ++ sets cell[0]=2, [-] clears it to 0, [->+<] is dead (cell[0]=0).
+        // > moves to cell[1]=0, +65 sets it to 65, . prints 'A'.
+        $this->assertSame('A', $this->execute('++[-][->+<]>' . str_repeat('+', 65) . '.'));
+    }
+
+    /**
+     * [multiply][same-cell-loop] — second loop is dead because multiply zeroes cell[0].
+     *
+     * ++[->+<] → cell[1]+=2, cell[0]=0.
+     * [->+<] again would add 0 to cell[1] and leave cell[0]=0 → no change.
+     * Result must be the same as if the second loop weren't there.
+     */
+    public function testDeadLoopAfterMultiplyLoop(): void
+    {
+        // cell[0]=2, [->+<]: cell[1]+=2, cell[0]=0.
+        // Second [->+<]: dead (cell[0]=0 at exit of first).
+        // > +×63 . → cell[1]=65 → 'A'.
+        $this->assertSame('A', $this->execute('++[->+<][->+<]>' . str_repeat('+', 63) . '.'));
+    }
+
+    /**
+     * Dead loops must not execute: behaviour must be identical whether or not they are removed.
+     */
+    public function testDeadLoopDoesNotExecute(): void
+    {
+        // [<] scan: exits with current cell = 0. Following [->+<] is dead.
+        // Pointer is at cell[0]=0 after [<]. Dead loop would incorrectly add to cell[-1].
+        // Without the dead loop cell[0] stays 0 and +65. = 'A'.
+        $this->assertSame('A', $this->execute('>+<[<][->+<]' . str_repeat('+', 65) . '.'));
+    }
+
+    // -----------------------------------------------------------------------
+    // Constant-load optimisation: [-]+N → $d[$i]=N;
+    // -----------------------------------------------------------------------
+
+    /**
+     * [-]+++++ must behave as a direct cell assignment (set cell to 5).
+     */
+    public function testConstantLoadBehavior(): void
+    {
+        // +++++ sets cell[0]=5, [-] clears to 0, +++++ sets back to 5.
+        // Adding 60 more → 65 = 'A'.
+        $this->assertSame('A', $this->execute(str_repeat('+', 5) . '[-]' . str_repeat('+', 65) . '.'));
+    }
+
+    /**
+     * [-]+N must compile to a direct assignment, not a read-then-add sequence.
+     */
+    public function testConstantLoadGeneratesDirectAssign(): void
+    {
+        // `+` prefix prevents dead-loop elimination at position 0.
+        $code = $this->compiler->toPHP('+[-]' . str_repeat('+', 5));
+        // Should contain $d[$i]=5; not $d[$i]=($d[$i]+5)&...
+        $this->assertStringContainsString('$d[$i]=5;', $code);
+        $this->assertStringNotContainsString('$d[$i]+5', $code);
     }
 }

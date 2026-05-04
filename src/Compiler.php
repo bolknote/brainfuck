@@ -18,22 +18,23 @@ class Compiler
     /** 8-bit cell mask; also limits `chr()` argument to a byte (see compileCode `E`). */
     private const int MASK_BYTE = 0xFF;
     private const int MASK_WORD = 0xFFFF;
+    private const int MASK_INT  = PHP_INT_MAX;
 
-    /** Bitmask applied to every cell write: MASK_BYTE / MASK_WORD, or 0 = no wrap. */
+    /** Bitmask applied to every cell write: MASK_BYTE / MASK_WORD / MASK_INT. */
     private readonly int $cellMask;
 
     /**
      * @param int $cellBits Cell width in bits.
      *                       CELL_BITS_8  — standard BF (default): cells wrap at 256.
      *                       CELL_BITS_16 — extended BF: cells wrap at 65536.
-     *                       CELL_BITS_UNBOUNDED — no wrapping: unbounded PHP integers.
+     *                       CELL_BITS_UNBOUNDED — cells wrap at PHP_INT_MAX.
      */
     public function __construct(int $cellBits = self::DEFAULT_CELL_BITS)
     {
         $this->cellMask = match ($cellBits) {
-            self::CELL_BITS_8        => self::MASK_BYTE,
-            self::CELL_BITS_16       => self::MASK_WORD,
-            self::CELL_BITS_UNBOUNDED => 0,
+            self::CELL_BITS_8         => self::MASK_BYTE,
+            self::CELL_BITS_16        => self::MASK_WORD,
+            self::CELL_BITS_UNBOUNDED => self::MASK_INT,
             default => throw new \InvalidArgumentException('cellBits must be 0, 8, or 16'),
         };
     }
@@ -142,11 +143,38 @@ class Compiler
         }
 
         // Encode run lengths: PPP → 03P  (max MAX_REPEAT per group)
-        return preg_replace_callback(
+        $str = preg_replace_callback(
             '/([PMpm])(\\1{1,' . (self::MAX_REPEAT - 1) . '})/',
             static fn ($m) => sprintf('%02d%s', strlen($m[2]) + 1, $m[1]),
             $str,
         ) ?? '';
+
+        // Dead loops after cell-zeroing single-char ops (c/l/r always leave $d[$i] = 0).
+        $str = preg_replace('/([clr])(L((?>[^LR]+)|(?R))*R)+/x', '$1', $str) ?? $str;
+
+        // Dead loops after balanced multiply/copy loops (M or c in body + balanced moves
+        // → $d[$i] = 0 at exit). Insert temporary Z marker, then strip following loops.
+        $str = preg_replace_callback('/L([MPmpc\d]+)R/', function (array $m): string {
+            $body = $m[1];
+            if (!str_contains($body, 'M') && !str_contains($body, 'c')) {
+                return $m[0];
+            }
+            $mCount = 0;
+            $pCount = 0;
+            preg_match_all('/(\d{2}|)([mp])/S', $body, $matches, PREG_SET_ORDER);
+            foreach ($matches as $match) {
+                $count = (int) ($match[1] ?: 1);
+                $match[2] === 'm' ? $mCount += $count : $pCount += $count;
+            }
+            return ($mCount === $pCount) ? $m[0] . 'Z' : $m[0];
+        }, $str) ?? $str;
+        $str = preg_replace('/Z(L((?>[^LR]+)|(?R))*R)+/x', 'Z', $str) ?? $str;
+        $str = str_replace('Z', '', $str);
+
+        // Second c/l/r pass: catch dead loops newly exposed by Z removal.
+        $str = preg_replace('/([clr])(L((?>[^LR]+)|(?R))*R)+/x', '$1', $str) ?? $str;
+
+        return $str;
     }
 
     /**
@@ -249,12 +277,6 @@ class Compiler
      */
     private function wrapCell(string $ref, string $op, int $amount): string
     {
-        if ($this->cellMask === 0) {
-            return $amount === 1
-                ? $ref . ($op === '+' ? '++;' : '--;')
-                : $ref . $op . '=' . $amount . ';';
-        }
-
         return $ref . '=(' . $ref . $op . $amount . ')&' . $this->cellMask . ';';
     }
 
@@ -615,11 +637,9 @@ class Compiler
             $str = preg_replace_callback($pattern, $callback, $str) ?? '';
         }
 
-        $readInput = $this->cellMask
-            ? 'array_shift($in)&' . $this->cellMask
-            : 'array_shift($in)';
+        $readInput = 'array_shift($in)&' . $this->cellMask;
 
-        return strtr($str, [
+        $str = strtr($str, [
             'E' => 'echo chr($d[$i]&' . self::MASK_BYTE . ');',
             'l' => 'for(;$d[$i];--$i);',
             'r' => 'for(;$d[$i];++$i);',
@@ -629,5 +649,19 @@ class Compiler
             '#' => 'echo "$i: $d[$i]\n";',
             'Y' => '$pid=pcntl_fork();if($pid)$d[$i++]=0;else $d[$i]=1;',
         ]);
+
+        // Constant-load: $d[$i]=0; immediately followed by $d[$i]±N → $d[$i]=constant;
+        // Arises from [-]+N or [-]-N patterns: the zero is known, so the read is redundant.
+        $mask = $this->cellMask;
+        $str  = preg_replace_callback(
+            '/\$d\[\$i\]=0;\$d\[\$i\]=\(\$d\[\$i\]([+\-])(\d+)\)&' . $mask . ';/',
+            static function (array $m) use ($mask): string {
+                $val = ($m[1] === '+' ? (int) $m[2] : -(int) $m[2]) & $mask;
+                return '$d[$i]=' . $val . ';';
+            },
+            $str,
+        ) ?? $str;
+
+        return $str;
     }
 }

@@ -51,7 +51,7 @@ The `$cellBits` constructor parameter controls cell arithmetic overflow behaviou
 |-------------|------------|-------------------|----------|
 | `8` (default) | 0 – 255 | wraps modulo 256 | standard BF programs |
 | `16` | 0 – 65535 | wraps modulo 65536 | programs designed for 16-bit cells (e.g. `PI16.BF`) |
-| `0` | unbounded PHP int | no wrapping | programs that never overflow |
+| `0` | 0 – PHP_INT_MAX | wraps modulo PHP_INT_MAX+1 | programs needing very large cell values |
 
 ```php
 // 8-bit (standard): cell wraps 0→255 and 255→0
@@ -62,7 +62,7 @@ eval($c8->compile(str_repeat('-', 157) . '.'));   // prints chr(99)
 $c16 = new Compiler(16);
 eval($c16->compile(file_get_contents('samples/prog/PI16.BF')));
 
-// No wrapping: cells are plain PHP integers
+// Wrap at PHP_INT_MAX: very large cell values, still unsigned
 $c0  = new Compiler(0);
 ```
 
