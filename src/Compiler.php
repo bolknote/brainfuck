@@ -588,8 +588,17 @@ class Compiler
     protected function compileCode(string $str): string
     {
         $patterns = [
-            // [>>>+<<-<]  — loop optimisation
+            // [>>>+<<-<]  — loop optimisation (must run before constant-load fold so that
+            // cyclesOp can inspect raw opcodes like `c` inside loop bodies)
             '/L([MPmpc\d]+)R/' => fn (array $m): string => $this->cyclesOp(self::pcreGroup($m, 1)),
+
+            // [-]+N, [-]-N — cell is known zero after clear; fold into a direct constant assignment.
+            '/c(\d{2}|)([PM])/' => function (array $m): string {
+                $countStr = self::pcreGroup($m, 1);
+                $count    = $countStr !== '' ? (int) $countStr : 1;
+                $val      = (self::pcreGroup($m, 2) === 'P' ? $count : -$count) & $this->cellMask;
+                return '$d[$i]=' . $val . ';';
+            },
 
             // <+++>, <[-]>, <--->
             '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' =>
@@ -649,18 +658,6 @@ class Compiler
             '#' => 'echo "$i: $d[$i]\n";',
             'Y' => '$pid=pcntl_fork();if($pid)$d[$i++]=0;else $d[$i]=1;',
         ]);
-
-        // Constant-load: $d[$i]=0; immediately followed by $d[$i]±N → $d[$i]=constant;
-        // Arises from [-]+N or [-]-N patterns: the zero is known, so the read is redundant.
-        $mask = $this->cellMask;
-        $str  = preg_replace_callback(
-            '/\$d\[\$i\]=0;\$d\[\$i\]=\(\$d\[\$i\]([+\-])(\d+)\)&' . $mask . ';/',
-            static function (array $m) use ($mask): string {
-                $val = ($m[1] === '+' ? (int) $m[2] : -(int) $m[2]) & $mask;
-                return '$d[$i]=' . $val . ';';
-            },
-            $str,
-        ) ?? $str;
 
         return $str;
     }
