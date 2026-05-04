@@ -299,20 +299,31 @@ class Compiler
 
     /**
      * Resolve `*(N)` placeholders left by cyclesOp, scaling them by $divider.
+     * Returns null when any placeholder does not divide evenly, meaning the
+     * loop cannot be expressed as straight-line integer arithmetic.
      */
-    protected function applyDivider(string $out, int $divider): string
+    protected function applyDivider(string $out, int $divider): ?string
     {
         $divider = $divider ?: 1;
+        $failed = false;
 
-        return preg_replace_callback(
+        $result = preg_replace_callback(
             '/\*\((\d+)\)/S',
-            static fn (array $m): string => match (true) {
-                ($c = (int) self::pcreGroup($m, 1)) === $divider => '',
-                $c % $divider === 0 => '*' . intdiv($c, $divider),
-                default => '*' . ($c / $divider),
+            static function (array $m) use ($divider, &$failed): string {
+                $c = (int) self::pcreGroup($m, 1);
+                if ($c === $divider) {
+                    return '';
+                }
+                if ($c % $divider === 0) {
+                    return '*' . intdiv($c, $divider);
+                }
+                $failed = true;
+                return '';
             },
             $out,
         ) ?? $out;
+
+        return $failed ? null : $result;
     }
 
     /**
@@ -398,7 +409,11 @@ class Compiler
                     } else {
                         $start = true;
                         $divider += $num;
-                        $out = $this->applyDivider($out, $divider);
+                        $applied = $this->applyDivider($out, $divider);
+                        if ($applied === null) {
+                            return 'L' . $str . 'R';
+                        }
+                        $out = $applied;
                     }
                     break;
             }
@@ -406,7 +421,11 @@ class Compiler
 
         if ($start) {
             $out .= '$d[$i]=0;';
-            return $this->applyDivider($out, $divider);
+            $applied = $this->applyDivider($out, $divider);
+            if ($applied === null) {
+                return 'L' . $str . 'R';
+            }
+            return $applied;
         }
 
         return 'L' . $str . 'R';
