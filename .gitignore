@@ -1,5 +1,10 @@
+# Composer
 vendor/
+
+# Tooling caches
 .php-cs-fixer.cache
 .phpunit.result.cache
+
+# OS / IDE
 .DS_Store
 .idea/
