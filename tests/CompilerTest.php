@@ -115,7 +115,8 @@ class CompilerTest extends TestCase
     {
         $header = $this->compiler->addHeader('', '');
         $this->assertStringContainsString('array_fill', $header);
-        $this->assertStringContainsString('intdiv', $header);
+        // Tape start is inlined as a compile-time constant, not a runtime intdiv call.
+        $this->assertMatchesRegularExpression('/\$i=\d+;/', $header);
     }
 
     public function testAddHeaderWithInputEmbedsCodes(): void

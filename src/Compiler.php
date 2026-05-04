@@ -46,7 +46,9 @@ class Compiler
      */
     public function addHeader(string $str, string $input = ''): string
     {
-        $str = '$d=array_fill(0,' . self::TAPE_SIZE . ',0);$i=intdiv(count($d),2);' . $str;
+        // Tape start is precomputed; $ob accumulates all output for a single flush at the end.
+        $tapeStart = intdiv(self::TAPE_SIZE, 2);
+        $str = '$d=array_fill(0,' . self::TAPE_SIZE . ',0);$i=' . $tapeStart . ';$ob="";' . $str . 'echo $ob;';
 
         $codes = $input === '' ? [] : (unpack('c*', $input . "\0") ?: []);
 
@@ -278,7 +280,6 @@ class Compiler
         $out = '';
         $pos = 0;
         $start = false;
-        $clearEnd = true;
         $divider = 0;
 
         $len = strlen($str);
@@ -329,10 +330,7 @@ class Compiler
         }
 
         if ($start) {
-            if ($clearEnd) {
-                $out .= '$d[$i]=0;';
-            }
-
+            $out .= '$d[$i]=0;';
             return $this->applyDivider($out, $divider);
         }
 
@@ -535,7 +533,7 @@ class Compiler
             : 'array_shift($in)';
 
         return strtr($str, [
-            'E' => 'printf("%c",$d[$i]);',
+            'E' => '$ob.=chr($d[$i]&255);',
             'l' => 'for(;$d[$i];--$i);',
             'r' => 'for(;$d[$i];++$i);',
             ',' => 'if(!$in){$in=array_values(unpack("c*",rtrim(fgets(STDIN))));$in[]=0;};$d[$i]=' . $readInput . ';',
