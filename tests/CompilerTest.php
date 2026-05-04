@@ -508,7 +508,7 @@ class CompilerTest extends TestCase
     //   $d[$i]    = 0;                   // A := 0
     // -----------------------------------------------------------------------
 
-    private const MUL_PATTERN = '[->[->+>+<<]>>[-<<+>>]<<<]';
+    private const string MUL_PATTERN = '[->[->+>+<<]>>[-<<+>>]<<<]';
 
     /**
      * Behaviour: 5 * 13 = 65 → 'A'.
