@@ -263,4 +263,120 @@ class CompilerTest extends TestCase
         $samples = __DIR__ . '/../samples/prog/hello_world.b';
         $this->assertSame('Hello World!', $this->executeWith(8, self::readSample($samples)));
     }
+
+    // --- c-loop optimisation (one-shot and constant-set) ---
+    //
+    // Discriminating value: cell[0] = 5.
+    // Wrong optimiser: multiplies destination by source → result 5.
+    // Correct opt:     destination is set to a constant (1) → result 1.
+    // We verify by moving the destination to a printable ASCII range:
+    //   correct  →  1 + 64 = 65 → 'A'
+    //   wrong    →  5 + 64 = 69 → 'E'
+
+    /**
+     * Class A — c at pos=0, before any other ops.
+     * [[-]>+<]  ≡  if cell[0]: cell[1]++; cell[0]=0
+     */
+    public function testOneShotLoopClearFirst(): void
+    {
+        // +++++  → cell[0]=5
+        // [[-]>+<]  → one-shot: cell[1]=1, cell[0]=0
+        // >++++...+  → cell[1]+64 = 65
+        $this->assertSame('A', $this->executeWith(8, '+++++[[-]>+<]>' . str_repeat('+', 64) . '.'));
+    }
+
+    /**
+     * Class A — c at pos=0, at the end of the body.
+     * [>+<[-]]  ≡  if cell[0]: cell[1]++; cell[0]=0
+     */
+    public function testOneShotLoopClearLast(): void
+    {
+        $this->assertSame('A', $this->executeWith(8, '+++++[>+<[-]]>' . str_repeat('+', 64) . '.'));
+    }
+
+    /**
+     * Class A — loop with c at pos=0 should not run when cell[0]=0.
+     */
+    public function testOneShotLoopSkippedWhenZero(): void
+    {
+        // cell[0]=0, cell[1]=5; loop must not run; print cell[1] as chr(5+60)='A'
+        $this->assertSame('A', $this->executeWith(8, '>' . str_repeat('+', 5) . '<[[-]>+<]>' . str_repeat('+', 60) . '.'));
+    }
+
+    /**
+     * Class A — c at pos=0 with a decrement on a non-source cell.
+     * [[-]>-<]  ≡  if cell[0]: cell[1]--; cell[0]=0
+     * Start with cell[1]=66='B', expect cell[1]=65='A' after one-shot.
+     */
+    public function testOneShotLoopDecrementsOnce(): void
+    {
+        // cell[0]=5, cell[1]=66
+        // one-shot: cell[1] -= 1 → 65, cell[0]=0
+        $this->assertSame('A', $this->executeWith(8, '+++++>' . str_repeat('+', 66) . '<[[-]>-<]>.'));
+    }
+
+    /**
+     * Class B — M at pos=0 decrement + c followed by P at same non-zero pos.
+     * [<[-]+>-]  ≡  if cell[0]: cell[-1]=1; cell[0]=0
+     * (regardless of how large cell[0] is, cell[-1] ends up 1, not cell[0])
+     */
+    public function testConstantSetLoopSetsOne(): void
+    {
+        // >+++++  → cell[1]=5 (this is the "source")
+        // [<[-]+>-]  → constant-set: cell[0]=1, cell[1]=0
+        // <++++...+  → cell[0]+64 = 65
+        $this->assertSame('A', $this->executeWith(8, '>+++++[<[-]+>-]<' . str_repeat('+', 64) . '.'));
+    }
+
+    /**
+     * Class B — same pattern but destination to the right.
+     * [>[-]+<-]  ≡  if cell[0]: cell[1]=1; cell[0]=0
+     */
+    public function testConstantSetLoopRightDirection(): void
+    {
+        $this->assertSame('A', $this->executeWith(8, '+++++[>[-]+<-]>' . str_repeat('+', 64) . '.'));
+    }
+
+    /**
+     * Class B — constant-set must not run when source is zero.
+     */
+    public function testConstantSetLoopSkippedWhenZero(): void
+    {
+        // cell[0]=0; loop must not run; cell[1] stays 0; 0+65=65='A'
+        $this->assertSame('A', $this->executeWith(8, '[<[-]+>-]>' . str_repeat('+', 65) . '.'));
+    }
+
+    // --- Generated-code shape tests (RED until the optimiser is implemented) ---
+
+    /**
+     * One-shot loops must compile to an `if` statement, not a `while` loop.
+     * With the current bail-out, toPHP emits `while($d[$i])` for these bodies.
+     */
+    public function testOneShotLoopGeneratesIf(): void
+    {
+        // '+' ensures the loop is not dead-loop-eliminated (cell[0] may be non-zero).
+        // [[-]>+<] — c at pos=0 first
+        $code = $this->compiler->toPHP('+[[-]>+<]');
+        $this->assertStringNotContainsString('while', $code);
+        $this->assertStringContainsString('if(', $code);
+    }
+
+    public function testOneShotLoopClearLastGeneratesIf(): void
+    {
+        // [>+<[-]] — c at pos=0 last
+        $code = $this->compiler->toPHP('+[>+<[-]]');
+        $this->assertStringNotContainsString('while', $code);
+        $this->assertStringContainsString('if(', $code);
+    }
+
+    /**
+     * Constant-set loops must compile to an `if` statement.
+     */
+    public function testConstantSetLoopGeneratesIf(): void
+    {
+        // [<[-]+>-] — M at pos=0, c+P at pos=-1
+        $code = $this->compiler->toPHP('+[<[-]+>-]');
+        $this->assertStringNotContainsString('while', $code);
+        $this->assertStringContainsString('if(', $code);
+    }
 }

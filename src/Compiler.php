@@ -259,23 +259,22 @@ class Compiler
      */
     protected function cyclesOp(string $str): string
     {
-        // Any nested [-] (c) in the body makes the multiply-by-source model invalid:
-        //  c at pos=0  → loop runs at most once (not source times)
-        //  c at pos≠0  → destination is reset each iteration, so adding source_value
-        //                 is wrong (effective coefficient is 1, not source)
-        if (str_contains($str, 'c')) {
-            return 'L' . $str . 'R';
-        }
-
+        // Pointer moves must balance: the body must leave the pointer at its
+        // starting position, otherwise the loop condition cell changes each pass.
         $moves = ['m' => 0, 'p' => 0];
-
         preg_match_all('/(\d{2}|)([mp])/S', $str, $matches, PREG_SET_ORDER);
         foreach ($matches as $match) {
             $moves[$match[2]] += $match[1] ?: 1;
         }
-
         if ($moves['m'] !== $moves['p']) {
             return 'L' . $str . 'R';
+        }
+
+        // Loops containing [-] (opcode c) need special handling because the
+        // multiply-by-source model no longer applies.  Delegate to a dedicated
+        // path; fall back to the standard path when c is absent.
+        if (str_contains($str, 'c')) {
+            return $this->cyclesOpWithClear($str);
         }
 
         $out = '';
@@ -328,14 +327,6 @@ class Compiler
                         $out = $this->applyDivider($out, $divider);
                     }
                     break;
-
-                case 'c':
-                    // The str_contains('c') guard at entry already catches c at pos=0.
-                    // Reaching here means pos≠0: emit a conditional destination clear.
-                    if ($pos !== 0) {
-                        $out .= 'if ($d[$i]) $d[$i' . $posStr . ']=0;';
-                    }
-                    break;
             }
         }
 
@@ -348,6 +339,163 @@ class Compiler
         }
 
         return 'L' . $str . 'R';
+    }
+
+    /**
+     * Handle loop bodies that contain the `c` (i.e. `[-]`) opcode.
+     *
+     * Two patterns are recognised and optimised; everything else falls back to
+     * a `while` loop so correctness is preserved.
+     *
+     * Class A — one-shot:
+     *   `c` appears at pos=0 at any point ⇒ the outer loop runs at most once.
+     *   Emitted as: if($d[$i]){ <raw ops on other cells>; $d[$i]=0; }
+     *
+     * Class B — constant-set:
+     *   `M` at pos=0 is the usual decrement controller AND every non-zero
+     *   position that is written was first cleared by `c` in the same iteration
+     *   ⇒ the destination ends up at a constant value regardless of the source.
+     *   Emitted as: if($d[$i]){ dest=const; …; $d[$i]=0; }
+     */
+    private function cyclesOpWithClear(string $str): string
+    {
+        $len = strlen($str);
+
+        // First pass: determine control type.
+        $pos = 0;
+        $hasClearAtZero = false;
+        $hasDecrAtZero  = false;
+
+        for ($k = 0; $k < $len; $k++) {
+            if ((string) (int) $str[$k] === $str[$k]) {
+                $num = (int) substr($str, $k++, 2);
+                $op  = $str[++$k];
+            } else {
+                $num = 1;
+                $op  = $str[$k];
+            }
+            if ($op === 'p') {
+                $pos += $num;
+            } elseif ($op === 'm') {
+                $pos -= $num;
+            } elseif ($op === 'c' && $pos === 0) {
+                $hasClearAtZero = true;
+            } elseif ($op === 'M' && $pos === 0) {
+                $hasDecrAtZero = true;
+            }
+        }
+
+        if ($hasClearAtZero) {
+            return $this->oneShotOpt($str, $len);
+        }
+
+        if ($hasDecrAtZero) {
+            return $this->constantSetOpt($str, $len);
+        }
+
+        return 'L' . $str . 'R';
+    }
+
+    /**
+     * Class A: c at pos=0 somewhere in the body ⇒ the loop runs at most once.
+     *
+     * Generates: if($d[$i]){ <one occurrence of each non-pos0 op>; $d[$i]=0; }
+     * Operations at pos=0 are skipped because the trailing `$d[$i]=0` dominates.
+     */
+    private function oneShotOpt(string $str, int $len): string
+    {
+        $out = '';
+        $pos = 0;
+
+        for ($k = 0; $k < $len; $k++) {
+            if ((string) (int) $str[$k] === $str[$k]) {
+                $num = (int) substr($str, $k++, 2);
+                $op  = $str[++$k];
+            } else {
+                $num = 1;
+                $op  = $str[$k];
+            }
+
+            if ($op === 'p') { $pos += $num; continue; }
+            if ($op === 'm') { $pos -= $num; continue; }
+            if ($pos === 0)  { continue; } // overridden by final $d[$i]=0
+
+            $posStr = $pos > 0 ? '+' . $pos : (string) $pos;
+            $ref    = '$d[$i' . $posStr . ']';
+
+            $out .= match ($op) {
+                'P'     => $this->wrapCell($ref, '+', $num),
+                'M'     => $this->wrapCell($ref, '-', $num),
+                'c'     => $ref . '=0;',
+                default => '',
+            };
+        }
+
+        return 'if($d[$i]){' . $out . '$d[$i]=0;}';
+    }
+
+    /**
+     * Class B: M at pos=0 is the decrement controller and every non-zero
+     * position that is written was first cleared by `c` in the same iteration.
+     *
+     * Each such destination ends up holding a constant value (the net sum of
+     * P/M ops since the last `c` at that position), independent of the source.
+     *
+     * Generates: if($d[$i]){ dest=const; …; $d[$i]=0; }
+     *
+     * Falls back to a while loop if any non-zero position is written without a
+     * preceding `c` (that would be a multiply-accumulate, not a constant-set).
+     */
+    private function constantSetOpt(string $str, int $len): string
+    {
+        $pos              = 0;
+        $cleared          = [];  // positions cleared by c in this iteration
+        $constants        = [];  // pos => net constant value
+
+        for ($k = 0; $k < $len; $k++) {
+            if ((string) (int) $str[$k] === $str[$k]) {
+                $num = (int) substr($str, $k++, 2);
+                $op  = $str[++$k];
+            } else {
+                $num = 1;
+                $op  = $str[$k];
+            }
+
+            if ($op === 'p') { $pos += $num; continue; }
+            if ($op === 'm') { $pos -= $num; continue; }
+            if ($op === 'M' && $pos === 0) { continue; } // source decrement, handled
+
+            // Any other op at pos=0 is not supported (e.g. P at pos=0 alongside M).
+            if ($pos === 0) {
+                return 'L' . $str . 'R';
+            }
+
+            if ($op === 'c') {
+                $cleared[$pos]   = true;
+                $constants[$pos] = 0;
+            } elseif ($op === 'P' || $op === 'M') {
+                if (!isset($cleared[$pos])) {
+                    // Multiply-accumulate at a non-cleared position: not supported here.
+                    return 'L' . $str . 'R';
+                }
+                $constants[$pos] += $op === 'P' ? $num : -$num;
+            }
+        }
+
+        if ($constants === []) {
+            return 'L' . $str . 'R';
+        }
+
+        $out = '';
+        foreach ($constants as $constPos => $value) {
+            if ($this->cellMask) {
+                $value &= $this->cellMask;
+            }
+            $posStr = $constPos > 0 ? '+' . $constPos : (string) $constPos;
+            $out   .= '$d[$i' . $posStr . ']=' . $value . ';';
+        }
+
+        return 'if($d[$i]){' . $out . '$d[$i]=0;}';
     }
 
     /**
