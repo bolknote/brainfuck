@@ -65,15 +65,10 @@ class Compiler
             $unpacked = unpack('c*', $input . "\0");
             if (is_array($unpacked)) {
                 $codes = array_map(
-                    static function (mixed $b): string {
-                        if (is_int($b)) {
-                            return (string) $b;
-                        }
-                        if (is_string($b)) {
-                            return $b;
-                        }
-
-                        return '0';
+                    static fn (mixed $b): string => match (true) {
+                        is_int($b) => (string) $b,
+                        is_string($b) => $b,
+                        default => '0',
                     },
                     array_values($unpacked),
                 );
@@ -309,19 +304,15 @@ class Compiler
     {
         $divider = $divider ?: 1;
 
-        return preg_replace_callback('/\*\((\d+)\)/S', static function (array $m) use ($divider) {
-            $count = (int) self::pcreGroup($m, 1);
-
-            if ($count === $divider) {
-                return '';
-            }
-
-            if ($count % $divider === 0) {
-                return '*' . intdiv($count, $divider);
-            }
-
-            return '*' . ($count / $divider);
-        }, $out) ?? $out;
+        return preg_replace_callback(
+            '/\*\((\d+)\)/S',
+            static fn (array $m): string => match (true) {
+                ($c = (int) self::pcreGroup($m, 1)) === $divider => '',
+                $c % $divider === 0 => '*' . intdiv($c, $divider),
+                default => '*' . ($c / $divider),
+            },
+            $out,
+        ) ?? $out;
     }
 
     /**
@@ -384,11 +375,11 @@ class Compiler
                         $operator = $op === 'M' ? '-' : '+';
                         $ref = '$d[$i' . $posStr . ']';
 
-                        if ($this->cellMask) {
-                            // With wrapping: cells are always ≥ 0, abs() is not needed.
+                        if ($this->cellMask !== self::MASK_INT) {
+                            // Bounded cells (8/16-bit): wrap with mask; cells are ≥ 0, abs() not needed.
                             $out .= $ref . '=(' . $ref . $operator . '$d[$i]*(' . $num . '))&' . $this->cellMask . ';';
                         } else {
-                            // Without wrapping: abs() guards against negative source cells.
+                            // Unbounded: abs() guards against negative source cells.
                             $out .= $ref . $operator . '=abs($d[$i])*(' . $num . ');';
                         }
                     } else {
@@ -571,7 +562,7 @@ class Compiler
 
         $out = '';
         foreach ($constants as $constPos => $value) {
-            if ($this->cellMask) {
+            if ($this->cellMask !== self::MASK_INT) {
                 $value &= $this->cellMask;
             }
             $posStr = $constPos > 0 ? '+' . $constPos : (string) $constPos;
@@ -593,12 +584,11 @@ class Compiler
             '/L([MPmpc\d]+)R/' => fn (array $m): string => $this->cyclesOp(self::pcreGroup($m, 1)),
 
             // [-]+N, [-]-N — cell is known zero after clear; fold into a direct constant assignment.
-            '/c(\d{2}|)([PM])/' => function (array $m): string {
-                $countStr = self::pcreGroup($m, 1);
-                $count    = $countStr !== '' ? (int) $countStr : 1;
-                $val      = (self::pcreGroup($m, 2) === 'P' ? $count : -$count) & $this->cellMask;
-                return '$d[$i]=' . $val . ';';
-            },
+            '/c(\d{2}|)([PM])/' => fn (array $m): string => '$d[$i]=' . (
+                ((self::pcreGroup($m, 2) === 'P' ? 1 : -1)
+                    * (self::pcreGroup($m, 1) !== '' ? (int) self::pcreGroup($m, 1) : 1))
+                & $this->cellMask
+            ) . ';',
 
             // <+++>, <[-]>, <--->
             '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' =>
@@ -619,16 +609,11 @@ class Compiler
                 ),
 
             // ++>>, <<<-
-            '/(\d{2}|(?<!\d))([MP])([mp])/' =>
-                function (array $m): string {
-                    $third = self::pcreGroup($m, 3);
-
-                    return $this->op(
-                        self::pcreGroup($m, 1),
-                        self::pcreGroup($m, 2),
-                        $third === 'm' ? '$i--' : '$i++',
-                    );
-                },
+            '/(\d{2}|(?<!\d))([MP])([mp])/' => fn (array $m): string => $this->op(
+                self::pcreGroup($m, 1),
+                self::pcreGroup($m, 2),
+                self::pcreGroup($m, 3) === 'm' ? '$i--' : '$i++',
+            ),
 
             // <<+, >>>-, >>>[-]
             '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' =>
