@@ -12,23 +12,28 @@ use BolkNote\Brainfuck\Compiler;
 
 $cellBits = 8;
 $args = [];
-$cliArgv = $_SERVER['argv'] ?? [];
+$rawArgv = $_SERVER['argv'] ?? null;
+$cliArgv = is_array($rawArgv) ? $rawArgv : [];
 foreach (array_slice($cliArgv, 1) as $arg) {
-    if (preg_match('/^--bits=(\d+)$/', (string) $arg, $m)) {
+    if (!is_string($arg)) {
+        continue;
+    }
+    if (preg_match('/^--bits=(\d+)$/', $arg, $m)) {
         $cellBits = (int) $m[1];
     } else {
         $args[] = $arg;
     }
 }
 
-if (empty($args[0])) {
+if ($args === [] || $args[0] === '') {
     fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] <file.bf>\n");
     exit(1);
 }
 
-$source = file_get_contents($args[0]);
+$sourcePath = $args[0];
+$source = file_get_contents($sourcePath);
 if ($source === false) {
-    fwrite(STDERR, "Error: cannot read file '{$args[0]}'\n");
+    fwrite(STDERR, "Error: cannot read file '{$sourcePath}'\n");
     exit(1);
 }
 

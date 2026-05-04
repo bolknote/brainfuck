@@ -49,7 +49,25 @@ class Compiler
         $tapeStart = intdiv(self::TAPE_SIZE, 2);
         $str = '$d=array_fill(0,' . self::TAPE_SIZE . ',0);$i=' . $tapeStart . ';' . $str;
 
-        $codes = $input === '' ? [] : (unpack('c*', $input . "\0") ?: []);
+        $codes = [];
+        if ($input !== '') {
+            $unpacked = unpack('c*', $input . "\0");
+            if (is_array($unpacked)) {
+                $codes = array_map(
+                    static function (mixed $b): string {
+                        if (is_int($b)) {
+                            return (string) $b;
+                        }
+                        if (is_string($b)) {
+                            return $b;
+                        }
+
+                        return '0';
+                    },
+                    array_values($unpacked),
+                );
+            }
+        }
 
         return '$in=[' . implode(',', $codes) . '];' . $str;
     }
@@ -231,14 +249,36 @@ class Compiler
     }
 
     /**
+     * PCRE group value as string (match arrays are untyped for static analysis).
+     *
+     * @param array<int|string, mixed> $m
+     */
+    private static function pcreGroup(array $m, int $index): string
+    {
+        if (! array_key_exists($index, $m)) {
+            return '';
+        }
+
+        $v = $m[$index];
+        if (is_string($v)) {
+            return $v;
+        }
+        if (is_int($v) || is_float($v)) {
+            return (string) $v;
+        }
+
+        return '';
+    }
+
+    /**
      * Resolve `*(N)` placeholders left by cyclesOp, scaling them by $divider.
      */
     protected function applyDivider(string $out, int $divider): string
     {
         $divider = $divider ?: 1;
 
-        return preg_replace_callback('/\*\((\d+)\)/S', static function ($m) use ($divider) {
-            $count = (int) $m[1];
+        return preg_replace_callback('/\*\((\d+)\)/S', static function (array $m) use ($divider) {
+            $count = (int) self::pcreGroup($m, 1);
 
             if ($count === $divider) {
                 return '';
@@ -517,26 +557,48 @@ class Compiler
     {
         $patterns = [
             // [>>>+<<-<]  — loop optimisation
-            '/L([MPmpc\d]+)R/' => fn ($m) => $this->cyclesOp($m[1]),
+            '/L([MPmpc\d]+)R/' => fn (array $m): string => $this->cyclesOp(self::pcreGroup($m, 1)),
 
             // <+++>, <[-]>, <--->
             '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' =>
-                fn ($m) => $this->dirOp($m[2], $m[1], $m[3], $m[4]),
+                fn (array $m): string => $this->dirOp(
+                    self::pcreGroup($m, 2),
+                    self::pcreGroup($m, 1),
+                    self::pcreGroup($m, 3),
+                    self::pcreGroup($m, 4),
+                ),
 
             // >+++<, >[-]<, >---<
             '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/' =>
-                fn ($m) => $this->dirOp($m[2], $m[1], $m[3], $m[4]),
+                fn (array $m): string => $this->dirOp(
+                    self::pcreGroup($m, 2),
+                    self::pcreGroup($m, 1),
+                    self::pcreGroup($m, 3),
+                    self::pcreGroup($m, 4),
+                ),
 
             // ++>>, <<<-
             '/(\d{2}|(?<!\d))([MP])([mp])/' =>
-                fn ($m) => $this->op($m[1], $m[2], $m[3] === 'm' ? '$i--' : '$i++'),
+                function (array $m): string {
+                    $third = self::pcreGroup($m, 3);
+
+                    return $this->op(
+                        self::pcreGroup($m, 1),
+                        self::pcreGroup($m, 2),
+                        $third === 'm' ? '$i--' : '$i++',
+                    );
+                },
 
             // <<+, >>>-, >>>[-]
             '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' =>
-                fn ($m) => $this->op($m[3], $m[4], rtrim($this->op($m[1], $m[2]), ';')),
+                fn (array $m): string => $this->op(
+                    self::pcreGroup($m, 3),
+                    self::pcreGroup($m, 4),
+                    rtrim($this->op(self::pcreGroup($m, 1), self::pcreGroup($m, 2)), ';'),
+                ),
 
             // ++, ---, [-], [<], [>], <<<, >>>
-            '/(\d{2}|)([MPmplrc])/' => fn ($m) => $this->op($m[1], $m[2]),
+            '/(\d{2}|)([MPmplrc])/' => fn (array $m): string => $this->op(self::pcreGroup($m, 1), self::pcreGroup($m, 2)),
         ];
 
         foreach ($patterns as $pattern => $callback) {
