@@ -40,4 +40,9 @@ if ($source === false) {
 $compiler = new Compiler($cellBits);
 $code = $compiler->compile($source);
 
-eval($code);
+try {
+    eval($code);
+} catch (\OutOfRangeException $e) {
+    fwrite(STDERR, "BF tape error: " . $e->getMessage() . "\n");
+    exit(2);
+}

@@ -12,7 +12,7 @@ class Compiler
     public const int DEFAULT_CELL_BITS = self::CELL_BITS_8;
 
     private const int TAPE_EXTENT = 65535;
-    private const int TAPE_SIZE = self::TAPE_EXTENT * 2;
+    public const int TAPE_SIZE = self::TAPE_EXTENT * 2;
     private const int MAX_REPEAT = 99;
 
     /** 8-bit cell mask; also limits `chr()` argument to a byte (see compileCode `E`). */
@@ -57,7 +57,12 @@ class Compiler
     public function addHeader(string $str, string $input = ''): string
     {
         $tapeStart = intdiv(self::TAPE_SIZE, 2);
-        $str = '$d=array_fill(0,' . self::TAPE_SIZE . ',0);$i=' . $tapeStart . ';' . $str;
+        // $_b is a closure so it can be called from the body via the safe token sequence
+        // $_b() — the body is processed by strtr, which must not see throw/Exception chars.
+        $oob = 'throw new \OutOfRangeException("Tape out of bounds")';
+        $str = '$d=array_fill(0,' . self::TAPE_SIZE . ',0);$i=' . $tapeStart . ';'
+            . '$_b=fn()=>' . $oob . ';'
+            . $str;
 
         $codes = [];
         if ($input !== '') {
@@ -188,11 +193,19 @@ class Compiler
     {
         $repeat = (int) $repeat;
 
+        // Bounds-check expressions must NOT contain the strtr opcode characters
+        // (E, l, r, ,, L, R, #, Y) because toPHP() runs strtr over the whole body.
+        // We use the short helper closure $_b (defined in addHeader) whose call
+        // $_ b() contains only safe characters: $, _, b, (, ).
         if ($op === 'm') {
-            return $repeat ? '$i-=' . $repeat . ';' : '--$i;';
+            return $repeat
+                ? '($i-=' . $repeat . ')>=0||$_b();'
+                : '--$i>=0||$_b();';
         }
         if ($op === 'p') {
-            return $repeat ? '$i+=' . $repeat . ';' : '++$i;';
+            return $repeat
+                ? '($i+=' . $repeat . ')<' . self::TAPE_SIZE . '||$_b();'
+                : '++$i<' . self::TAPE_SIZE . '||$_b();';
         }
 
         $cell = $idx === null ? '$d[$i]' : '$d[' . $idx . ']';
@@ -621,13 +634,13 @@ class Compiler
 
         return strtr($str, [
             'E' => 'echo chr($d[$i]&' . self::MASK_BYTE . ');',
-            'l' => 'for(;$d[$i];--$i);',
-            'r' => 'for(;$d[$i];++$i);',
+            'l' => 'while($d[$i]){if(--$i<0)throw new \OutOfRangeException("Tape underflow at $i");}',
+            'r' => 'while($d[$i]){if(++$i>=' . self::TAPE_SIZE . ')throw new \OutOfRangeException("Tape overflow at $i");}',
             ',' => 'if(!$in){$in=array_values(unpack("c*",rtrim(fgets(STDIN))));$in[]=0;};$d[$i]=' . $readInput . ';',
             'L' => 'while($d[$i]){',
             'R' => '}',
             '#' => 'echo "$i: $d[$i]\n";',
-            'Y' => '$pid=pcntl_fork();if($pid)$d[$i++]=0;else $d[$i]=1;',
+            'Y' => '$pid=pcntl_fork();if($pid){$d[$i]=0;if(++$i>=' . self::TAPE_SIZE . ')throw new \OutOfRangeException("Tape overflow at $i");}else $d[$i]=1;',
         ]);
     }
 }
