@@ -1048,7 +1048,7 @@ class Compiler
             'E' => 'echo chr($d[$i]&' . self::MASK_BYTE . ');',
             'l' => 'for(;$d[$i];--$i);',
             'r' => 'for(;$d[$i];++$i);',
-            ',' => 'if(!$in){$in=array_values(unpack("c*",rtrim(fgets(STDIN))));$in[]=0;};$d[$i]=' . $readInput . ';',
+            ',' => 'if(!$in){$in=array_values(unpack("c*",fgets(STDIN)??""));$in[]=0;};$d[$i]=' . $readInput . ';',
             'L' => 'while($d[$i]){',
             'W' => 'while($d[$i]){', // raw while: no loop optimisation attempted
             'R' => '}',
