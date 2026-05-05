@@ -33,7 +33,11 @@ class CompilerTest extends TestCase
         ob_start();
 
         try {
-            eval($this->compiler->compile($bf, $input));
+            $fn = eval($this->compiler->compile($bf, $input));
+            if (!is_callable($fn)) {
+                throw new \RuntimeException('Compiled code did not return a callable');
+            }
+            $fn();
             $out = ob_get_clean();
 
             return is_string($out) ? $out : '';
@@ -188,7 +192,7 @@ class CompilerTest extends TestCase
     {
         $header = $this->compiler->addHeader('', 'A');
         // addHeader packs input with unpack('c*', $input . "\0") — signed bytes + trailing 0
-        $this->assertStringStartsWith('$in=[65,0];', $header);
+        $this->assertStringStartsWith('return static function() { $in=[65,0];', $header);
     }
 
     public function testDebugOpcodeOutputsPointerAndCellValue(): void
@@ -196,7 +200,11 @@ class CompilerTest extends TestCase
         $compiler = new Compiler(debug: true);
         $out = '';
         ob_start();
-        eval($compiler->compile('#'));
+        $fn = eval($compiler->compile('#'));
+        if (!is_callable($fn)) {
+            throw new \RuntimeException('Compiled code did not return a callable');
+        }
+        $fn();
         $out = ob_get_clean();
         $this->assertSame("65535: 0\n", $out);
     }
@@ -211,7 +219,11 @@ class CompilerTest extends TestCase
         $compiler = new Compiler(debug: true);
         $out = '';
         ob_start();
-        eval($compiler->compile(str_repeat('+', 65) . '.#'));
+        $fn = eval($compiler->compile(str_repeat('+', 65) . '.#'));
+        if (!is_callable($fn)) {
+            throw new \RuntimeException('Compiled code did not return a callable');
+        }
+        $fn();
         $out = ob_get_clean();
         $this->assertSame("A65535: 65\n", $out);
     }
@@ -290,7 +302,11 @@ class CompilerTest extends TestCase
         ob_start();
 
         try {
-            eval($compiler->compile($bf, $input));
+            $fn = eval($compiler->compile($bf, $input));
+            if (!is_callable($fn)) {
+                throw new \RuntimeException('Compiled code did not return a callable');
+            }
+            $fn();
             $out = ob_get_clean();
 
             return is_string($out) ? $out : '';
@@ -389,7 +405,11 @@ class CompilerTest extends TestCase
         $compiler = new Compiler(0, debug: true);
         $code = $compiler->compile('-#');
         ob_start();
-        eval($code);
+        $fn = eval($code);
+        if (!is_callable($fn)) {
+            throw new \RuntimeException('Compiled code did not return a callable');
+        }
+        $fn();
         $out = ob_get_clean();
         $this->assertNotFalse($out);
         $this->assertStringContainsString(': -1', $out);
@@ -819,7 +839,11 @@ class CompilerTest extends TestCase
         $level = ob_get_level();
         ob_start();
         try {
-            eval($compiler->compile($bf));
+            $fn = eval($compiler->compile($bf));
+            if (!is_callable($fn)) {
+                throw new \RuntimeException('Compiled code did not return a callable');
+            }
+            $fn();
             $out = ob_get_clean() ?: '';
         } finally {
             if (ob_get_level() > $level) {

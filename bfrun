@@ -10,34 +10,46 @@ require __DIR__ . '/vendor/autoload.php';
 
 use BolkNote\Brainfuck\Compiler;
 
-function enableImmediateStdinMode(bool $enabled): ?string
+/**
+ * @return array{mode: string|null, blocking: bool|null}
+ */
+function enableImmediateStdinMode(bool $enabled): array
 {
     if (!$enabled || PHP_OS_FAMILY === 'Windows' || !function_exists('stream_isatty') || !stream_isatty(STDIN)) {
-        return null;
+        return ['mode' => null, 'blocking' => null];
     }
 
     $mode = [];
     exec('stty -g < /dev/tty 2>/dev/null', $mode, $status);
     if ($status !== 0 || !isset($mode[0]) || $mode[0] === '') {
-        return null;
+        return ['mode' => null, 'blocking' => null];
     }
 
     $unused = [];
     exec('stty raw -echo < /dev/tty 2>/dev/null', $unused, $status);
     if ($status !== 0) {
-        return null;
+        return ['mode' => null, 'blocking' => null];
     }
 
-    return $mode[0];
+    $metadata = stream_get_meta_data(STDIN);
+    $wasBlocking = $metadata['blocked'] === true;
+    stream_set_blocking(STDIN, false);
+
+    return ['mode' => $mode[0], 'blocking' => $wasBlocking];
 }
 
-function restoreImmediateStdinMode(?string $mode): void
+/**
+ * @param array{mode: string|null, blocking: bool|null} $state
+ */
+function restoreImmediateStdinMode(array $state): void
 {
-    if ($mode === null) {
-        return;
+    if ($state['blocking'] !== null) {
+        stream_set_blocking(STDIN, $state['blocking']);
     }
 
-    exec('stty ' . escapeshellarg($mode) . ' < /dev/tty 2>/dev/null');
+    if ($state['mode'] !== null) {
+        exec('stty ' . escapeshellarg($state['mode']) . ' < /dev/tty 2>/dev/null');
+    }
 }
 
 function applyBfrunOption(
@@ -172,7 +184,11 @@ $code = $compiler->compile($source);
 
 $stdinMode = enableImmediateStdinMode(!$stdinLineBuffered);
 try {
-    eval($code);
+    $fn = eval($code);
+    if (!is_callable($fn)) {
+        throw new \RuntimeException('Compiled code did not return a callable');
+    }
+    $fn();
 } finally {
     restoreImmediateStdinMode($stdinMode);
 }

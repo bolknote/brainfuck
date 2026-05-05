@@ -85,13 +85,13 @@ class Compiler
         $str = $prefix . '$d=[];$i=' . $tapeStart . ';' . $str;
 
         if ($input === '') {
-            return '$in=[];' . $str;
+            return 'return static function() { $in=[];' . $str . ' };';
         }
 
         if ($this->inputCrLf) {
             $exported = var_export($input, true);
 
-            return '$__bfIn=' . $exported . ';$in=array_values(unpack(\'c*\',(preg_replace(\'/(?<!\r)\n/\',"\r\n",$__bfIn)??$__bfIn)."\0"));' . $str;
+            return 'return static function() { $__bfIn=' . $exported . ';$in=array_values(unpack(\'c*\',(preg_replace(\'/(?<!\r)\n/\',"\r\n",$__bfIn)??$__bfIn)."\0"));' . $str . ' };';
         }
 
         $codes = [];
@@ -107,7 +107,7 @@ class Compiler
             );
         }
 
-        return '$in=[' . implode(',', $codes) . '];' . $str;
+        return 'return static function() { $in=[' . implode(',', $codes) . '];' . $str . ' };';
     }
 
     /**
