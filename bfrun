@@ -155,6 +155,7 @@ function applyBfrunOption(
     bool &$randomOpcode,
     bool &$inputCrLf,
     bool &$stdinLineBuffered,
+    bool &$gzip,
 ): bool {
     if (preg_match('/^--bits=(\d+)$/', $arg, $m)) {
         $cellBits = (int) $m[1];
@@ -168,6 +169,7 @@ function applyBfrunOption(
         '-@', '--random' => 'random',
         '-W', '--crlf-input' => 'crlf-input',
         '-I', '--immediate-stdin' => 'immediate-stdin',
+        '-z', '--gzip' => 'gzip',
         default => null,
     };
 
@@ -190,6 +192,9 @@ function applyBfrunOption(
             break;
         case 'immediate-stdin':
             $stdinLineBuffered = false;
+            break;
+        case 'gzip':
+            $gzip = true;
             break;
     }
 
@@ -235,6 +240,7 @@ $debug        = false;
 $randomOpcode = false;
 $inputCrLf       = false;
 $stdinLineBuffered = true;
+$gzip            = false;
 $args            = [];
 $rawArgv   = $_SERVER['argv'] ?? null;
 $cliArgv   = is_array($rawArgv) ? $rawArgv : [];
@@ -243,13 +249,13 @@ foreach (array_slice($cliArgv, 1) as $arg) {
         continue;
     }
     $arg = rtrim($arg, "\r");
-    if (!applyBfrunOption($arg, $cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered)) {
+    if (!applyBfrunOption($arg, $cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered, $gzip)) {
         $args[] = $arg;
     }
 }
 
 if ($args === [] || $args[0] === '') {
-    fwrite(STDERR, "Usage: bfrun [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] [--crlf-input|-W] [--immediate-stdin|-I] <file.bf>\n");
+    fwrite(STDERR, "Usage: bfrun [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] [--crlf-input|-W] [--immediate-stdin|-I] [-z|--gzip] <file.bf>\n");
     exit(1);
 }
 
@@ -262,10 +268,19 @@ if ($source === false) {
 ensureMemoryForLargeSource($source);
 
 foreach (extractHashbangOptions($source) as $arg) {
-    if (!applyBfrunOption($arg, $cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered)) {
+    if (!applyBfrunOption($arg, $cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered, $gzip)) {
         fwrite(STDERR, "Error: unsupported hashbang option '{$arg}'\n");
         exit(1);
     }
+}
+
+if ($gzip) {
+    $unpacked = @gzdecode($source);
+    if ($unpacked === false) {
+        fwrite(STDERR, "Error: cannot decode gzip source\n");
+        exit(1);
+    }
+    $source = $unpacked;
 }
 
 $compiler = new Compiler(
@@ -281,7 +296,10 @@ $fn = loadCompiledCache($cachePath);
 if ($fn === null) {
     $code = $compiler->compile($source);
     writeCompiledCache($cachePath, $code);
-    $fn = eval($code);
+    $fn = loadCompiledCache($cachePath);
+    if ($fn === null) {
+        $fn = eval($code);
+    }
 }
 
 $stdinMode = enableImmediateStdinMode(!$stdinLineBuffered);

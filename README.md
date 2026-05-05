@@ -40,6 +40,7 @@ bfrun -Y fork_example.bf
 - `-W` — normalise input for BF programs that expect Windows line endings: lone `\n` bytes become `\r\n`.
 - `--crlf-input` — same as `-W`.
 - `--immediate-stdin` / `-I` — read stdin one byte at a time for `,`; on Unix-like systems, when stdin is an interactive TTY, `bfrun` temporarily switches it to raw, nonblocking mode and restores it on exit. When no byte is ready, `,` reads `0`, which lets interactive programs poll the keyboard while continuing to render. On Windows and non-TTY stdin, this still reads byte-by-byte from PHP's stream, but does not change console input mode.
+- `-z` / `--gzip` — treat the source after any hashbang as gzip-compressed Brainfuck. This is useful for very large generated BF programs.
 
 ```bash
 # Long-form Brainfork aliases
@@ -53,8 +54,8 @@ bfrun --debug samples/programs/tests/cell_size_8bit.bf
 bfrun -W samples/programs/io/echo2.bf
 bfrun --immediate-stdin samples/programs/io/echo2.bf
 
-# Interactive ANSI demo; requires random opcode and immediate stdin polling
-bfrun -@ -I samples/programs/demos/tetris.bf
+# Interactive ANSI demo; the file carries `-@ -I -z` in its hashbang
+samples/programs/demos/tetris.bf
 ```
 
 #### Hashbang options
@@ -89,7 +90,8 @@ also fine because `bfrun` ignores interpreter tokens before the `bfrun` command:
 
 Supported hashbang options are the same runtime options accepted by the CLI:
 `--bits=8|16|0`, `-Y` / `--fork` / `--brainfork`, `-d` / `--debug`, `-@` /
-`--random`, `-W` / `--crlf-input`, and `-I` / `--immediate-stdin`. Unknown
+`--random`, `-W` / `--crlf-input`, `-I` / `--immediate-stdin`, and `-z` /
+`--gzip`. Unknown
 hashbang options abort the run with an error.
 
 Command-line options are parsed first; hashbang options are then applied from
