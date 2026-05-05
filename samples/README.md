@@ -80,6 +80,21 @@ php run.php -Y some_fork_program.bf
 
 See `CompilerTest.php` for automated tests that exercise optimizations (loop elimination, RLE, multiply-move patterns, relative addressing, etc.).
 
+## Input Requirements
+
+Some programs were written for specific input formats and will hang or exhaust memory if given the wrong terminator:
+
+| Program | Expected terminator | How to run |
+|---|---|---|
+| `hello/hello_you.bf` | `\r` (CR, ASCII 13) | `printf "Alice\r" \| php run.php ...` |
+| `math/rpn.bf` | `\r` (CR, ASCII 13) | `printf "3 4 +\r" \| php run.php ...` |
+| `text/sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| php run.php ...` |
+| `text/bertram_sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| php run.php ...` |
+
+**Why they hang:** these programs use input to detect end-of-line by checking for a specific sentinel value. When given a Unix `\n` or EOF=0, the sentinel is never found — the loop runs forever with `++$i` on every iteration, growing the sparse tape array until OOM.
+
+`quines/self_mod_quine.bf` is inherently memory-intensive due to its self-modifying nature.
+
 ## Cell Size Requirements
 
 See main `README.md` for details on `$cellBits` parameter. Notable examples:
