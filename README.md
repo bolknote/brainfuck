@@ -25,6 +25,26 @@ php run.php samples/programs/hello/hello_world.bf
 php run.php -Y fork_example.bf
 ```
 
+#### CLI options
+
+`run.php` supports the following CLI options:
+
+- `--bits=8|16|0` — cell width mode (`8` default, `16` for 16-bit overflow semantics, `0` for very large values).
+- `-Y` — enable Brainfork opcode `Y`.
+- `--fork` — same as `-Y`.
+- `--brainfork` — same as `-Y`.
+- `-d` — enable debug output for `#` opcode handling.
+- `--debug` — same as `-d`.
+
+```bash
+# Long-form Brainfork aliases
+php run.php --fork fork_example.bf
+php run.php --brainfork fork_example.bf
+
+# Debug mode
+php run.php --debug samples/programs/tests/cell_size_8bit.bf
+```
+
 ### API
 
 ```php

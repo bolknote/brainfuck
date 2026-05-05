@@ -78,26 +78,6 @@ php run.php samples/programs/io/echo2.bf   # (provide input via stdin or modify)
 php run.php -Y some_fork_program.bf
 ```
 
-### CLI Keys
-
-`run.php` supports the following CLI keys:
-
-- `--bits=8|16|0` — cell width mode (`8` default, `16` for 16-bit overflow semantics, `0` for very large values).
-- `-Y` — enable Brainfork opcode `Y`.
-- `--fork` — same as `-Y`.
-- `--brainfork` — same as `-Y`.
-- `-d` — enable debug output for `#` opcode handling.
-- `--debug` — same as `-d`.
-
-```bash
-# Long-form Brainfork aliases
-php run.php --fork some_fork_program.bf
-php run.php --brainfork some_fork_program.bf
-
-# Debug mode
-php run.php --debug samples/programs/tests/cell_size_8bit.bf
-```
-
 See `CompilerTest.php` for automated tests that exercise optimizations (loop elimination, RLE, multiply-move patterns, relative addressing, etc.).
 
 ## Input Requirements
