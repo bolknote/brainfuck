@@ -277,9 +277,9 @@ class CompilerTest extends TestCase
         $this->assertSame($expected, $this->execute($bf, $input));
     }
 
-    private function executeWith(int $cellBits, string $bf, string $input = '', bool $debug = false, bool $randomOpcode = false, bool $inputCrLf = false): string
+    private function executeWith(int $cellBits, string $bf, string $input = '', bool $debug = false, bool $randomOpcode = false, bool $inputCrLf = false, bool $stdinLineBuffered = true): string
     {
-        $compiler = new Compiler($cellBits, false, $debug, $randomOpcode, $inputCrLf);
+        $compiler = new Compiler($cellBits, false, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered);
         $level = ob_get_level();
         ob_start();
 
@@ -1029,15 +1029,18 @@ class CompilerTest extends TestCase
     {
         $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
         $code = $c->compile('+', "X\n");
-        // X=88, lone \n → \r\n → 88, 13, 10; unpack adds trailing 0 from "\0"
-        $this->assertStringContainsString('$in=[88,13,10,0]', $code);
+        // Prefill is built at run time in the generated script via PHP_OS_FAMILY + preg_replace.
+        $this->assertStringContainsString('$__bfIn=', $code);
+        $this->assertStringContainsString('PHP_OS_FAMILY', $code);
+        $this->assertStringContainsString('preg_replace', $code);
     }
 
     public function testInputCrLfLeavesExistingCrLfUnchanged(): void
     {
         $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
         $code = $c->compile('+', "X\r\n");
-        $this->assertStringContainsString('$in=[88,13,10,0]', $code);
+        $this->assertStringContainsString('$__bfIn=', $code);
+        $this->assertStringContainsString('PHP_OS_FAMILY', $code);
     }
 
     public function testInputCrLfDisabledLeavesUnixLf(): void
@@ -1052,6 +1055,34 @@ class CompilerTest extends TestCase
         $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
         $code = $c->toPHP(',');
         $this->assertStringContainsString('preg_replace', $code);
+        $this->assertStringContainsString('PHP_OS_FAMILY', $code);
         $this->assertStringContainsString('fgets(STDIN)', $code);
+    }
+
+    public function testLineBufferedCommaUsesFgets(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, false, true);
+        $code = $c->toPHP(',');
+        $this->assertStringContainsString('fgets(STDIN)', $code);
+        $this->assertStringNotContainsString('fread(STDIN,1)', $code);
+    }
+
+    public function testImmediateStdinCommaUsesFread(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, false, false);
+        $code = $c->toPHP(',');
+        $this->assertStringContainsString('fread(STDIN,1)', $code);
+        $this->assertStringNotContainsString('fgets(STDIN)', $code);
+    }
+
+    public function testImmediateStdinWithCrLfTracksBfInputPrev(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true, false);
+        $code = $c->compile(',', '');
+        $this->assertStringContainsString('if(PHP_OS_FAMILY!==\'Windows\'){$bfInputPrev=0;}', $code);
+        $this->assertStringContainsString('$bfInputPrev', $code);
+        $this->assertStringContainsString('fread(STDIN,1)', $code);
+        $this->assertStringContainsString('PHP_OS_FAMILY', $code);
+        $this->assertStringContainsString('$o===10', $code);
     }
 }
