@@ -31,10 +31,13 @@ class Compiler
      * @param bool $brainfork If true, opcode `Y` is recognised ([Brainfork](https://esolangs.org/wiki/Brainfork):
      *                        fork via `pcntl_fork()`). If false, `Y` is stripped like any non-BF character
      *                        (pure Brainfuck).
+     * @param bool $debug     If true, opcode `#` emits a debug dump (`$i: $d[$i]`). If false (default),
+     *                        `#` is treated as an ordinary comment character and ignored.
      */
     public function __construct(
         int $cellBits = self::DEFAULT_CELL_BITS,
         private readonly bool $brainfork = false,
+        private readonly bool $debug = false,
     ) {
         $this->cellMask = match ($cellBits) {
             self::CELL_BITS_8         => self::MASK_BYTE,
@@ -97,8 +100,9 @@ class Compiler
      */
     protected function prepare(string $str): string
     {
-        $forkChars = $this->brainfork ? 'Y' : '';
-        $str       = preg_replace("/[^\\-+\\[\\]><,.#{$forkChars}]+/", '', $str) ?? '';
+        $forkChars  = $this->brainfork ? 'Y' : '';
+        $debugChars = $this->debug ? '#' : '';
+        $str        = preg_replace("/[^\\-+\\[\\]><,.{$debugChars}{$forkChars}]+/", '', $str) ?? '';
 
         $trans = [
             '[<]' => 'l',
@@ -1061,8 +1065,10 @@ class Compiler
             'L' => 'while($d[$i]??0){',
             'W' => 'while($d[$i]??0){', // raw while: no loop optimisation attempted
             'R' => '}',
-            '#' => 'echo "$i: ".($d[$i]??0)."\n";',
         ];
+        if ($this->debug) {
+            $map['#'] = 'echo "$i: ".($d[$i]??0)."\n";';
+        }
         if ($this->brainfork) {
             $map['Y'] = '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;';
         }

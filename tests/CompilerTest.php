@@ -192,12 +192,27 @@ class CompilerTest extends TestCase
 
     public function testDebugOpcodeOutputsPointerAndCellValue(): void
     {
-        $this->assertSame("65535: 0\n", $this->execute('#'));
+        $compiler = new Compiler(debug: true);
+        $out = '';
+        ob_start();
+        eval($compiler->compile('#'));
+        $out = ob_get_clean();
+        $this->assertSame("65535: 0\n", $out);
+    }
+
+    public function testDebugOpcodeIgnoredByDefault(): void
+    {
+        $this->assertSame('', $this->execute('#'));
     }
 
     public function testOutputIsNotBufferedPastDebugOpcode(): void
     {
-        $this->assertSame("A65535: 65\n", $this->execute(str_repeat('+', 65) . '.#'));
+        $compiler = new Compiler(debug: true);
+        $out = '';
+        ob_start();
+        eval($compiler->compile(str_repeat('+', 65) . '.#'));
+        $out = ob_get_clean();
+        $this->assertSame("A65535: 65\n", $out);
     }
 
     public function testForkOpcodeIsIgnoredUnlessBrainforkEnabled(): void
@@ -252,9 +267,9 @@ class CompilerTest extends TestCase
         $this->assertSame($expected, $this->execute($bf, $input));
     }
 
-    private function executeWith(int $cellBits, string $bf, string $input = ''): string
+    private function executeWith(int $cellBits, string $bf, string $input = '', bool $debug = false): string
     {
-        $compiler = new Compiler($cellBits);
+        $compiler = new Compiler($cellBits, debug: $debug);
         $level = ob_get_level();
         ob_start();
 
@@ -289,13 +304,13 @@ class CompilerTest extends TestCase
     public function test16BitUnderflowWraps(): void
     {
         // `#` prints the full cell value; chr() would only reflect mod 256
-        $result = $this->executeWith(16, '-.#');
+        $result = $this->executeWith(16, '-.#', debug: true);
         $this->assertStringContainsString(': 65535', $result);
     }
 
     public function test16BitOverflowWraps(): void
     {
-        $result = $this->executeWith(16, str_repeat('+', 65535) . '+#');
+        $result = $this->executeWith(16, str_repeat('+', 65535) . '+#', debug: true);
         $this->assertStringContainsString(': 0', $result);
     }
 
@@ -303,7 +318,7 @@ class CompilerTest extends TestCase
     {
         // Compiler(0) is true-unbounded: no modular wrapping, raw PHP integers.
         // Decrementing below zero gives -1, not PHP_INT_MAX.
-        $compiler = new Compiler(0);
+        $compiler = new Compiler(0, debug: true);
         $code = $compiler->compile('-#');
         ob_start();
         eval($code);
@@ -753,7 +768,18 @@ class CompilerTest extends TestCase
             . '<'
             . self::MUL_PATTERN
             . '>>>#';
-        $this->assertStringContainsString(': 0', $this->execute($bf));
+        $compiler = new Compiler(debug: true);
+        $level = ob_get_level();
+        ob_start();
+        try {
+            eval($compiler->compile($bf));
+            $out = ob_get_clean() ?: '';
+        } finally {
+            if (ob_get_level() > $level) {
+                ob_end_clean();
+            }
+        }
+        $this->assertStringContainsString(': 0', $out);
     }
 
     // -----------------------------------------------------------------------

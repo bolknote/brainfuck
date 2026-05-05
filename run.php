@@ -12,6 +12,7 @@ use BolkNote\Brainfuck\Compiler;
 
 $cellBits  = Compiler::DEFAULT_CELL_BITS;
 $brainfork = false;
+$debug     = false;
 $args      = [];
 $rawArgv   = $_SERVER['argv'] ?? null;
 $cliArgv   = is_array($rawArgv) ? $rawArgv : [];
@@ -23,13 +24,15 @@ foreach (array_slice($cliArgv, 1) as $arg) {
         $cellBits = (int) $m[1];
     } elseif ($arg === '-Y' || $arg === '--fork' || $arg === '--brainfork') {
         $brainfork = true;
+    } elseif ($arg === '-d' || $arg === '--debug') {
+        $debug = true;
     } else {
         $args[] = $arg;
     }
 }
 
 if ($args === [] || $args[0] === '') {
-    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] <file.bf>\n");
+    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] [-d|--debug] <file.bf>\n");
     exit(1);
 }
 
@@ -40,7 +43,7 @@ if ($source === false) {
     exit(1);
 }
 
-$compiler = new Compiler($cellBits, $brainfork);
+$compiler = new Compiler($cellBits, $brainfork, $debug);
 $code = $compiler->compile($source);
 
 eval($code);
