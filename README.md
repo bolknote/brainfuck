@@ -39,7 +39,7 @@ bfrun -Y fork_example.bf
 - `--random` — same as `-@`.
 - `-W` — normalise input for BF programs that expect Windows line endings: lone `\n` bytes become `\r\n`.
 - `--crlf-input` — same as `-W`.
-- `--immediate-stdin` / `-I` — read stdin one byte at a time for `,`; on Unix-like systems, when stdin is an interactive TTY, `bfrun` temporarily switches it to raw mode and restores it on exit. On Windows and non-TTY stdin, this still reads byte-by-byte from PHP's stream, but does not change console input mode.
+- `--immediate-stdin` / `-I` — read stdin one byte at a time for `,`; on Unix-like systems, when stdin is an interactive TTY, `bfrun` temporarily switches it to raw, nonblocking mode and restores it on exit. When no byte is ready, `,` reads `0`, which lets interactive programs poll the keyboard while continuing to render. On Windows and non-TTY stdin, this still reads byte-by-byte from PHP's stream, but does not change console input mode.
 
 ```bash
 # Long-form Brainfork aliases
@@ -52,6 +52,9 @@ bfrun --debug samples/programs/tests/cell_size_8bit.bf
 # Programs that expect CRLF input or byte-at-a-time interactive input
 bfrun -W samples/programs/io/echo2.bf
 bfrun --immediate-stdin samples/programs/io/echo2.bf
+
+# Interactive ANSI demo; requires random opcode and immediate stdin polling
+bfrun -@ -I samples/programs/demos/tetris.bf
 ```
 
 #### Hashbang options

@@ -168,20 +168,16 @@ class Compiler
             '.' => 'E',
         ];
 
-        $str = strtr($str, $trans);
-
-        // Drop a loop at the very start: cell is always 0 there, so the loop never executes.
-        $str = preg_replace('/^[lrcmp]* L ( ( (?>[^LR]+) | (?R) )* ) R/x', '', $str) ?? '';
-
-        // Cancel out opposing runs: +++-- → +, >>>< → >>
-        foreach (['MP', 'mp'] as $set) {
+        // Cancel out opposing runs before IR translation, so large sources are
+        // shrunk before strtr walks the string: +++-- -> +, >>>< -> >>.
+        foreach (['-+', '<>'] as $set) {
             $str = preg_replace_callback("/[$set]{2,}/S", static function ($m) {
                 $leftOpcode = $m[0][0];
                 $rightOpcode = match ($leftOpcode) {
-                    'M' => 'P',
-                    'P' => 'M',
-                    'm' => 'p',
-                    default => 'm',
+                    '-' => '+',
+                    '+' => '-',
+                    '<' => '>',
+                    default => '<',
                 };
                 $diff = substr_count($m[0], $leftOpcode) - substr_count($m[0], $rightOpcode);
 
@@ -197,12 +193,17 @@ class Compiler
             }, $str) ?? '';
         }
 
-        // Encode run lengths: PPP → 03P  (max MAX_REPEAT per group)
+        // Encode run lengths: +++ -> 03+  (max MAX_REPEAT per group)
         $str = preg_replace_callback(
-            '/([PMpm])(\\1{1,' . (self::MAX_REPEAT - 1) . '})/',
+            '/([-+<>])(\\1{1,' . (self::MAX_REPEAT - 1) . '})/',
             static fn ($m) => sprintf('%02d%s', strlen($m[2]) + 1, $m[1]),
             $str,
         ) ?? '';
+
+        $str = strtr($str, $trans);
+
+        // Drop a loop at the very start: cell is always 0 there, so the loop never executes.
+        $str = preg_replace('/^[lrcmp]* L ( ( (?>[^LR]+) | (?R) )* ) R/x', '', $str) ?? '';
 
         // Dead loops after cell-zeroing single-char ops (c/l/r always leave $d[$i] = 0).
         $str = preg_replace('/([clr])(L((?>[^LR]+)|(?R))*R)+/x', '$1', $str) ?? $str;

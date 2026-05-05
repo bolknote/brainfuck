@@ -83,6 +83,70 @@ function ensureMemoryForLargeSource(string $source): void
     }
 }
 
+function compiledCachePath(
+    string $source,
+    int $cellBits,
+    bool $brainfork,
+    bool $debug,
+    bool $randomOpcode,
+    bool $inputCrLf,
+    bool $stdinLineBuffered,
+): string {
+    $compilerPath = __DIR__ . '/src/Compiler.php';
+    $compilerHash = is_file($compilerPath) ? hash_file('sha256', $compilerPath) : '';
+    $cacheKey = hash('sha256', implode("\n", [
+        'bfrun-compiled-v1',
+        hash('sha256', $source),
+        $compilerHash !== false ? $compilerHash : '',
+        (string) PHP_VERSION_ID,
+        (string) $cellBits,
+        $brainfork ? '1' : '0',
+        $debug ? '1' : '0',
+        $randomOpcode ? '1' : '0',
+        $inputCrLf ? '1' : '0',
+        $stdinLineBuffered ? '1' : '0',
+    ]));
+
+    return __DIR__ . '/var/cache/bfrun/' . $cacheKey . '.php';
+}
+
+function writeCompiledCache(string $path, string $code): void
+{
+    $dir = dirname($path);
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        return;
+    }
+
+    $tmp = $path . '.' . getmypid() . '.' . bin2hex(random_bytes(4)) . '.tmp';
+    $bytes = file_put_contents($tmp, "<?php\n" . $code . "\n", LOCK_EX);
+    if ($bytes === false) {
+        return;
+    }
+
+    if (!rename($tmp, $path)) {
+        @unlink($tmp);
+    }
+}
+
+/**
+ * @return callable|null
+ */
+function loadCompiledCache(string $path): ?callable
+{
+    if (!is_file($path)) {
+        return null;
+    }
+
+    $fn = require $path;
+    if (is_callable($fn)) {
+        return $fn;
+    }
+
+    @unlink($path);
+
+    return null;
+}
+
 function applyBfrunOption(
     string $arg,
     int &$cellBits,
@@ -212,11 +276,16 @@ $compiler = new Compiler(
     inputCrLf: $inputCrLf,
     stdinLineBuffered: $stdinLineBuffered,
 );
-$code = $compiler->compile($source);
+$cachePath = compiledCachePath($source, $cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered);
+$fn = loadCompiledCache($cachePath);
+if ($fn === null) {
+    $code = $compiler->compile($source);
+    writeCompiledCache($cachePath, $code);
+    $fn = eval($code);
+}
 
 $stdinMode = enableImmediateStdinMode(!$stdinLineBuffered);
 try {
-    $fn = eval($code);
     if (!is_callable($fn)) {
         throw new \RuntimeException('Compiled code did not return a callable');
     }
