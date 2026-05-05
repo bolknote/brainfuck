@@ -12,6 +12,18 @@ class CompilerTest extends TestCase
 {
     private Compiler $compiler;
 
+    private static function invokeNonPublic(object $object, string $method, mixed ...$args): mixed
+    {
+        $scope = $object::class;
+        $caller = \Closure::bind(
+            static fn (object $target, string $name, array $arguments): mixed => $target->{$name}(...$arguments),
+            null,
+            $scope,
+        );
+
+        return $caller($object, $method, $args);
+    }
+
     private static function readSample(string $path): string
     {
         $contents = file_get_contents($path);
@@ -952,5 +964,150 @@ class CompilerTest extends TestCase
     {
         $bf = '>' . str_repeat('+', 65) . '<[-->+<]>.';
         $this->assertSame($this->naive($bf), $this->execute($bf));
+    }
+
+    public function testUnboundedModeKeepsConditionalLoopAsWhile(): void
+    {
+        $code = (new Compiler(0))->toPHP('+[-->+<]');
+        $this->assertStringContainsString('while($d[$i]??0){', $code);
+    }
+
+    public function testUnboundedMinusAfterClearCompilesToNegativeConst(): void
+    {
+        $code = (new Compiler(0))->toPHP('[-]-');
+        $this->assertStringContainsString('$d[$i]=-1;', $code);
+    }
+
+    public function testPrivatePcreGroupDefensiveBranches(): void
+    {
+        $this->assertSame('', self::invokeNonPublic($this->compiler, 'pcreGroup', [], 3));
+        $this->assertSame('12', self::invokeNonPublic($this->compiler, 'pcreGroup', [1 => 12], 1));
+        $this->assertSame('', self::invokeNonPublic($this->compiler, 'pcreGroup', [1 => []], 1));
+    }
+
+    public function testPrivateCellRefPositiveAndNegativeOffsets(): void
+    {
+        $this->assertSame('$d[$i+2]', self::invokeNonPublic($this->compiler, 'cellRef', 2));
+        $this->assertSame('$d[$i-3]', self::invokeNonPublic($this->compiler, 'cellRef', -3));
+    }
+
+    public function testPrivateParseLoopTokensMalformedInputs(): void
+    {
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'parseLoopTokens', '9'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'parseLoopTokens', 'LLR'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'parseLoopTokens', 'LMP'));
+    }
+
+    public function testPrivateAnalyseFlatScatterRejectsInvalidForms(): void
+    {
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'analyseFlatScatter', 'PpM'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'analyseFlatScatter', 'MpP'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'analyseFlatScatter', 'Mp'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'analyseFlatScatter', 'ME'));
+    }
+
+    public function testCyclesOpFallbackWhenEffectAnalysisFails(): void
+    {
+        $result = self::invokeNonPublic($this->compiler, 'cyclesOp', 'PpMmp');
+        $this->assertSame('LPpMmpR', $result);
+    }
+
+    public function testCyclesOpWithClearFallbackWhenNoControlAtZero(): void
+    {
+        $result = self::invokeNonPublic($this->compiler, 'cyclesOpWithClear', 'pc');
+        $this->assertSame('LpcR', $result);
+    }
+
+    public function testConstantSetOptFallsBackWhenPosZeroHasUnsupportedOp(): void
+    {
+        $result = self::invokeNonPublic($this->compiler, 'constantSetOpt', 'MPpc', 4);
+        $this->assertSame('LMPpcR', $result);
+    }
+
+    public function testConstantSetOptFallsBackWithoutConstants(): void
+    {
+        $result = self::invokeNonPublic($this->compiler, 'constantSetOpt', 'MpM', 3);
+        $this->assertSame('LMpMR', $result);
+    }
+
+    public function testOneShotOptSkipsUnknownOpAtNonZeroPosition(): void
+    {
+        $result = self::invokeNonPublic($this->compiler, 'oneShotOpt', 'pX', 2);
+        $this->assertSame('if($d[$i]??0){$d[$i]=0;}', $result);
+    }
+
+    public function testUnboundedPrivateGeneratorsUseUnboundedBranches(): void
+    {
+        $c = new Compiler(0);
+
+        $straight = self::invokeNonPublic($c, 'genStraightLine', [2 => 2], 2);
+        $this->assertStringContainsString('abs($d[$i]??0)', $straight);
+
+        $fast = self::invokeNonPublic($c, 'genFastPath', [2 => 6, 3 => 5], 2);
+        $this->assertStringContainsString('abs($d[$i]??0)*3', $fast);
+        $this->assertStringContainsString('(($d[$i]??0)>>1)*5', $fast);
+    }
+
+    public function testDirOpClearBranchAndCellRefViaPublicPath(): void
+    {
+        $dirClear = self::invokeNonPublic($this->compiler, 'dirOp', 'p', 2, '', 'c');
+        $this->assertSame('$d[$i+2]=0;', $dirClear);
+
+        $codePos = $this->compiler->toPHP('+[->>+<<]');
+        $this->assertStringContainsString('$d[$i+2]', $codePos);
+        $this->assertSame('$d[$i-1]', self::invokeNonPublic($this->compiler, 'cellRef', -1));
+    }
+
+    public function testCyclesOpRejectsControllerIncrementAndUnexpectedOpcode(): void
+    {
+        $this->assertSame('LPR', self::invokeNonPublic($this->compiler, 'cyclesOp', 'P'));
+        $this->assertSame('LER', self::invokeNonPublic($this->compiler, 'cyclesOp', 'E'));
+    }
+
+    public function testPrivateGeneratorsSkipZeroContributionsInBoundedMode(): void
+    {
+        $straight = self::invokeNonPublic($this->compiler, 'genStraightLine', [2 => 0], 2);
+        $this->assertSame('$d[$i]=0;', $straight);
+
+        $fast = self::invokeNonPublic($this->compiler, 'genFastPath', [2 => 0, 3 => 2], 2);
+        $this->assertStringContainsString('$d[$i+3]', $fast);
+        $this->assertStringNotContainsString('$d[$i+2]', $fast);
+    }
+
+    public function testAnalyseFlatScatterExtraSourceModificationAndEmptyTargets(): void
+    {
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'analyseFlatScatter', 'MP'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'analyseFlatScatter', 'Mpm'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'analyseFlatScatter', 'L'));
+    }
+
+    public function testTryMulOptDefensiveNullBranches(): void
+    {
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'tryMulOpt', 'L'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'tryMulOpt', 'MpLMpRLMpR'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'tryMulOpt', 'MpLMMMpmRLMpR'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'tryMulOpt', 'MpLMPpmRLMPpmRLMPpmR'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'tryMulOpt', 'MpLMPpmRLMmpR'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'tryMulOpt', 'MpLMPpmRLMMppR'));
+        $this->assertNull(self::invokeNonPublic($this->compiler, 'tryMulOpt', 'MpLMPpmRLMPpmRpp'));
+    }
+
+    public function testTryMulOptUnboundedPathWithoutCoefficient(): void
+    {
+        $c = new Compiler(0);
+        $code = $c->toPHP('+' . self::MUL_PATTERN);
+        $this->assertIsString($code);
+        $this->assertStringContainsString('($d[$i]??0)*($d[$i+1]??0)', $code);
+    }
+
+    public function testOneShotOptParsesNumericTripletAndClearCase(): void
+    {
+        $result = self::invokeNonPublic($this->compiler, 'oneShotOpt', '02pcM', 5);
+        $this->assertStringContainsString('$d[$i+2]=0;', $result);
+    }
+
+    public function testConstantSetOptReturnsLoopWhenNoConstants(): void
+    {
+        $this->assertSame('LMMMpmR', self::invokeNonPublic($this->compiler, 'constantSetOpt', 'MMMpm', 5));
     }
 }
