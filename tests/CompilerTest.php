@@ -176,7 +176,8 @@ class CompilerTest extends TestCase
     public function testAddHeaderContainsTapeInit(): void
     {
         $header = $this->compiler->addHeader('', '');
-        $this->assertStringContainsString('array_fill', $header);
+        // Tape is a dynamic sparse array — no fixed-size pre-fill.
+        $this->assertStringContainsString('$d=[]', $header);
         // Tape start is inlined as a compile-time constant, not a runtime intdiv call.
         $this->assertMatchesRegularExpression('/\$i=\d+;/', $header);
     }
@@ -298,15 +299,17 @@ class CompilerTest extends TestCase
         $this->assertStringContainsString(': 0', $result);
     }
 
-    public function testNoCellBitsWrapsAtPhpIntMax(): void
+    public function testNoCellBitsUnboundedNoWrap(): void
     {
+        // Compiler(0) is true-unbounded: no modular wrapping, raw PHP integers.
+        // Decrementing below zero gives -1, not PHP_INT_MAX.
         $compiler = new Compiler(0);
         $code = $compiler->compile('-#');
         ob_start();
         eval($code);
         $out = ob_get_clean();
         $this->assertNotFalse($out);
-        $this->assertStringContainsString(': ' . PHP_INT_MAX, $out);
+        $this->assertStringContainsString(': -1', $out);
     }
 
     public function testInvalidCellBitsThrows(): void
@@ -832,7 +835,7 @@ class CompilerTest extends TestCase
     {
         // [-->+<] has a non-integer factor (1/2)
         $code = $this->compiler->toPHP('+[-->+<]');
-        $this->assertMatchesRegularExpression('/if\(\$d\[.*\]&1\)/', $code);
+        $this->assertMatchesRegularExpression('/if\(\(\$d\[.*\]\?\?0\)&1\)/', $code);
     }
 
     /**
@@ -842,7 +845,7 @@ class CompilerTest extends TestCase
     public function testConditionalOptFallbackIsWhile(): void
     {
         $code = $this->compiler->toPHP('+[-->+<]');
-        $this->assertStringContainsString('while($d[$i]){', $code);
+        $this->assertStringContainsString('while($d[$i]??0){', $code);
     }
 
     /**
@@ -864,7 +867,7 @@ class CompilerTest extends TestCase
     {
         // [--->>+<<]: div=3, effect at pos=2 is +1 (non-divisible by 3)
         $code = $this->compiler->toPHP('+[--->>+<<]');
-        $this->assertStringContainsString('(int)($d[$i]/3)', $code);
+        $this->assertStringContainsString('(int)(($d[$i]??0)/3)', $code);
     }
 
     /**

@@ -63,7 +63,7 @@ class Compiler
     public function addHeader(string $str, string $input = ''): string
     {
         $tapeStart = intdiv(self::TAPE_SIZE, 2);
-        $str = '$d=array_fill(0,' . self::TAPE_SIZE . ',0);$i=' . $tapeStart . ';' . $str;
+        $str = '$d=[];$i=' . $tapeStart . ';' . $str;
 
         $codes = [];
         if ($input !== '') {
@@ -278,7 +278,12 @@ class Compiler
      */
     private function wrapCell(string $ref, string $op, int $amount): string
     {
-        return $ref . '=(' . $ref . $op . $amount . ')&' . $this->cellMask . ';';
+        if ($this->cellMask === self::MASK_INT) {
+            // Unbounded mode: no masking, use raw PHP integers.
+            return $ref . '=(' . $ref . '??0)' . $op . $amount . ';';
+        }
+
+        return $ref . '=((' . $ref . '??0)' . $op . $amount . ')&' . $this->cellMask . ';';
     }
 
     /**
@@ -400,13 +405,13 @@ class Compiler
             $ref    = $this->cellRef($offset);
             $absF   = abs($factor);
             $op     = $factor > 0 ? '+' : '-';
-            $mult   = $absF === 1 ? '$d[$i]' : '$d[$i]*' . $absF;
+            $mult   = $absF === 1 ? '($d[$i]??0)' : '($d[$i]??0)*' . $absF;
 
             if ($this->cellMask !== self::MASK_INT) {
-                $out .= $ref . '=(' . $ref . $op . $mult . ')&' . $this->cellMask . ';';
+                $out .= $ref . '=((' . $ref . '??0)' . $op . $mult . ')&' . $this->cellMask . ';';
             } else {
-                $absOp = $absF === 1 ? 'abs($d[$i])' : 'abs($d[$i])*' . $absF;
-                $out .= $ref . $op . '=' . $absOp . ';';
+                $absOp = $absF === 1 ? 'abs($d[$i]??0)' : 'abs($d[$i]??0)*' . $absF;
+                $out .= $ref . '=(' . $ref . '??0)' . $op . $absOp . ';';
             }
         }
 
@@ -432,8 +437,8 @@ class Compiler
         $isPow2   = ($divider & ($divider - 1)) === 0;
         $shift    = $isPow2 ? (int) log($divider, 2) : 0;
         $quotient = $isPow2
-            ? '($d[$i]>>' . $shift . ')'
-            : '(int)($d[$i]/' . $divider . ')';
+            ? '(($d[$i]??0)>>' . $shift . ')'
+            : '(int)(($d[$i]??0)/' . $divider . ')';
 
         $out = '';
 
@@ -449,23 +454,23 @@ class Compiler
             if ($delta % $divider === 0) {
                 // Integer factor: reuse the cheaper $d[$i]*K form.
                 $factor = abs(intdiv($delta, $divider));
-                $mult   = $factor === 1 ? '$d[$i]' : '$d[$i]*' . $factor;
+                $mult   = $factor === 1 ? '($d[$i]??0)' : '($d[$i]??0)*' . $factor;
 
                 if ($this->cellMask !== self::MASK_INT) {
-                    $out .= $ref . '=(' . $ref . $op . $mult . ')&' . $this->cellMask . ';';
+                    $out .= $ref . '=((' . $ref . '??0)' . $op . $mult . ')&' . $this->cellMask . ';';
                 } else {
-                    $absOp = $factor === 1 ? 'abs($d[$i])' : 'abs($d[$i])*' . $factor;
-                    $out .= $ref . $op . '=' . $absOp . ';';
+                    $absOp = $factor === 1 ? 'abs($d[$i]??0)' : 'abs($d[$i]??0)*' . $factor;
+                    $out .= $ref . '=(' . $ref . '??0)' . $op . $absOp . ';';
                 }
             } else {
                 // Non-integer factor: runtime quotient required.
                 $mult = $absDelta === 1 ? $quotient : $quotient . '*' . $absDelta;
 
                 if ($this->cellMask !== self::MASK_INT) {
-                    $out .= $ref . '=(' . $ref . $op . $mult . ')&' . $this->cellMask . ';';
+                    $out .= $ref . '=((' . $ref . '??0)' . $op . $mult . ')&' . $this->cellMask . ';';
                 } else {
                     $rhs = $absDelta === 1 ? $quotient : $quotient . '*' . $absDelta;
-                    $out .= $ref . $op . '=' . $rhs . ';';
+                    $out .= $ref . '=(' . $ref . '??0)' . $op . $rhs . ';';
                 }
             }
         }
@@ -558,9 +563,9 @@ class Compiler
         // NOTE: `else` cannot be used here because it contains the character `l`
         // which is an IR opcode and would be mis-compiled by pattern 8.
         // The `W` pseudobytecode marks "while without further loop optimisation".
-        $guard    = ($divider & ($divider - 1)) === 0          // power of 2?
-            ? '$d[$i]&' . ($divider - 1)                       //   bitwise AND
-            : '$d[$i]%' . $divider;
+        $guard    = ($divider & ($divider - 1)) === 0                // power of 2?
+            ? '($d[$i]??0)&' . ($divider - 1)                     //   bitwise AND
+            : '($d[$i]??0)%' . $divider;
         $fastPath = $this->genFastPath($effects, $divider);
 
         return 'if(' . $guard . '){W' . $str . 'R}' . $fastPath;
@@ -790,10 +795,11 @@ class Compiler
             $posStr = $absPos > 0 ? '+' . $absPos : (string) $absPos;
             $factor = $coef === 1 ? '' : ('*' . $coef);
             if ($this->cellMask !== self::MASK_INT) {
-                $out .= '$d[$i' . $posStr . ']=($d[$i' . $posStr . ']+$d[$i]*$d[$i'
-                    . $bRefSuffix . ']' . $factor . ')&' . $this->cellMask . ';';
+                $out .= '$d[$i' . $posStr . ']=(($d[$i' . $posStr . ']??0)+($d[$i]??0)*($d[$i'
+                    . $bRefSuffix . ']??0)' . $factor . ')&' . $this->cellMask . ';';
             } else {
-                $out .= '$d[$i' . $posStr . ']+=$d[$i]*$d[$i' . $bRefSuffix . ']' . $factor . ';';
+                $out .= '$d[$i' . $posStr . ']=($d[$i' . $posStr . ']??0)+(($d[$i]??0)*($d[$i'
+                    . $bRefSuffix . ']??0))' . $factor . ';';
             }
         }
         $out .= '$d[$i]=0;';
@@ -899,7 +905,7 @@ class Compiler
             };
         }
 
-        return 'if($d[$i]){' . $out . '$d[$i]=0;}';
+        return 'if($d[$i]??0){' . $out . '$d[$i]=0;}';
     }
 
     /**
@@ -971,7 +977,7 @@ class Compiler
             $out   .= '$d[$i' . $posStr . ']=' . $value . ';';
         }
 
-        return 'if($d[$i]){' . $out . '$d[$i]=0;}';
+        return 'if($d[$i]??0){' . $out . '$d[$i]=0;}';
     }
 
     /**
@@ -996,9 +1002,12 @@ class Compiler
 
             // [-]+N, [-]-N — cell is known zero after clear; fold into a direct constant assignment.
             '/c(\d{2}|)([PM])/' => fn (array $m): string => '$d[$i]=' . (
-                ((self::pcreGroup($m, 2) === 'P' ? 1 : -1)
-                    * (self::pcreGroup($m, 1) !== '' ? (int) self::pcreGroup($m, 1) : 1))
-                & $this->cellMask
+                $this->cellMask === self::MASK_INT
+                    ? ((self::pcreGroup($m, 2) === 'P' ? 1 : -1)
+                        * (self::pcreGroup($m, 1) !== '' ? (int) self::pcreGroup($m, 1) : 1))
+                    : (((self::pcreGroup($m, 2) === 'P' ? 1 : -1)
+                        * (self::pcreGroup($m, 1) !== '' ? (int) self::pcreGroup($m, 1) : 1))
+                        & $this->cellMask)
             ) . ';',
 
             // <+++>, <[-]>, <--->
@@ -1042,17 +1051,17 @@ class Compiler
             $str = preg_replace_callback($pattern, $callback, $str) ?? '';
         }
 
-        $readInput = 'array_shift($in)&' . $this->cellMask;
+        $readInput = '(array_shift($in)??0)&' . $this->cellMask;
 
         $map = [
-            'E' => 'echo chr($d[$i]&' . self::MASK_BYTE . ');',
-            'l' => 'for(;$d[$i];--$i);',
-            'r' => 'for(;$d[$i];++$i);',
+            'E' => 'echo chr(($d[$i]??0)&' . self::MASK_BYTE . ');',
+            'l' => 'for(;$d[$i]??0;--$i);',
+            'r' => 'for(;$d[$i]??0;++$i);',
             ',' => 'if(!$in){$in=array_values(unpack("c*",fgets(STDIN)??""));$in[]=0;};$d[$i]=' . $readInput . ';',
-            'L' => 'while($d[$i]){',
-            'W' => 'while($d[$i]){', // raw while: no loop optimisation attempted
+            'L' => 'while($d[$i]??0){',
+            'W' => 'while($d[$i]??0){', // raw while: no loop optimisation attempted
             'R' => '}',
-            '#' => 'echo "$i: $d[$i]\n";',
+            '#' => 'echo "$i: ".($d[$i]??0)."\n";',
         ];
         if ($this->brainfork) {
             $map['Y'] = '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;';
