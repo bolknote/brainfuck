@@ -20,19 +20,19 @@ use BolkNote\Brainfuck\Compiler;
 $programs = [
     [
         'label'  => 'hanoi.bf',
-        'path'   => 'samples/prog/hanoi.bf',
+        'path'   => 'samples/programs/demos/hanoi.bf',
         'input'  => '',
         'runs'   => 0,   // too slow for timing (~5s), measure code metrics only
     ],
     [
         'label'  => '2d_table.bf',
-        'path'   => 'samples/prog/2d_table.bf',
+        'path'   => 'samples/programs/tests/2d_table.bf',
         'input'  => '',
         'runs'   => 0,   // zero-input program, measure code metrics only
     ],
     [
-        'label'  => 'hello_world.b',
-        'path'   => 'samples/prog/hello_world.b',
+        'label'  => 'hello_world.bf',
+        'path'   => 'samples/programs/hello/hello_world.bf',
         'input'  => '',
         'runs'   => 500,
     ],

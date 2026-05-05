@@ -51,7 +51,7 @@ class CompilerTest extends TestCase
 
     public function testHelloWorld(): void
     {
-        $samples = __DIR__ . '/../samples/prog/hello_world.b';
+        $samples = __DIR__ . '/../samples/programs/hello/hello_world.bf';
         $this->assertSame('Hello World!', $this->execute(self::readSample($samples)));
     }
 
@@ -166,16 +166,17 @@ class CompilerTest extends TestCase
      */
     public static function sampleProvider(): array
     {
-        $dir = __DIR__ . '/../samples/prog';
+        $helloDir = __DIR__ . '/../samples/programs/hello';
+        $cristofaniDir = __DIR__ . '/../samples/collections/cristofani/programs';
 
         return [
             'hello_world' => [
-                self::readSample("$dir/hello_world.b"),
+                self::readSample("$helloDir/hello_world.bf"),
                 '',
                 'Hello World!',
             ],
             'rot13_A' => [
-                self::readSample("$dir/rot13.b"),
+                self::readSample("$cristofaniDir/rot13.bf"),
                 "A\n",
                 "N\n",
             ],
@@ -254,7 +255,7 @@ class CompilerTest extends TestCase
 
     public function test8BitHelloWorld(): void
     {
-        $samples = __DIR__ . '/../samples/prog/hello_world.b';
+        $samples = __DIR__ . '/../samples/programs/hello/hello_world.bf';
         $this->assertSame('Hello World!', $this->executeWith(8, self::readSample($samples)));
     }
 

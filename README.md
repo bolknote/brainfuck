@@ -20,7 +20,7 @@ composer install
 ### CLI
 
 ```bash
-php run.php samples/prog/hello_world.b
+php run.php samples/programs/hello/hello_world.bf
 # Brainfork (`Y` opcode): same flags as many interpreters (e.g. weave.rb `-Y`)
 php run.php -Y fork_example.bf
 ```
@@ -55,7 +55,7 @@ The `$cellBits` constructor parameter controls cell arithmetic overflow behaviou
 | `$cellBits` | Cell range | Overflow behaviour | Use case |
 |-------------|------------|-------------------|----------|
 | `8` (default) | 0 – 255 | wraps modulo 256 | standard BF programs |
-| `16` | 0 – 65535 | wraps modulo 65536 | programs designed for 16-bit cells (e.g. `PI16.BF`) |
+| `16` | 0 – 65535 | wraps modulo 65536 | programs designed for 16-bit cells (e.g. `pi16.bf`) |
 | `0` | 0 – PHP_INT_MAX | wraps modulo PHP_INT_MAX+1 | programs needing very large cell values |
 
 ```php
@@ -65,13 +65,13 @@ eval($c8->compile(str_repeat('-', 157) . '.'));   // prints chr(99)
 
 // 16-bit: programs that rely on 16-bit arithmetic overflow
 $c16 = new Compiler(16);
-eval($c16->compile(file_get_contents('samples/prog/PI16.BF')));
+eval($c16->compile(file_get_contents('samples/programs/math/pi16.bf')));
 
 // Wrap at PHP_INT_MAX: very large cell values, still unsigned
 $c0  = new Compiler(0);
 ```
 
-Programs like `beer.b`, `bockbeer.b`, `99botles.bf` and `ryan-beer.bf` initialise
+Programs like `beer.bf`, `bockbeer.bf`, `99_bottles.bf` and `ryan_beer.bf` initialise
 their counter via 8-bit overflow (`0 − 157 = 99` in 8-bit BF) and require
 `Compiler(8)` (the default) to run correctly.
 
@@ -121,7 +121,15 @@ src/
 tests/
   CompilerTest.php
 samples/
-  prog/           — classic BF programs (hello world, mandelbrot, …)
-  quine/          — BF quine collection
+  programs/       — classic BF programs grouped by purpose
+  quines/         — BF quine collection
+  collections/    — preserved external sample collections
+  docs/           — sample-related notes and links
 run.php           — CLI entry point
 ```
+
+## License
+
+This project (compiler source, tests, tooling, and documentation outside third-party trees) is licensed under the [MIT License](LICENSE).
+
+The **`samples/`** directory contains Brainfuck programs and collections gathered from various authors and websites for testing and demonstration. Those files are **not** necessarily covered by this project’s MIT license: rights remain with their respective authors, and license terms may differ. Where a subfolder includes its own `readme`, attribution, or license notes, those apply to the files in that tree; treat `samples/` as bundled third-party material unless stated otherwise.
