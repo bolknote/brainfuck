@@ -304,37 +304,186 @@ class Compiler
     }
 
     /**
-     * Resolve `*(N)` placeholders left by cyclesOp, scaling them by $divider.
-     * Returns null when any placeholder does not divide evenly, meaning the
-     * loop cannot be expressed as straight-line integer arithmetic.
+     * Build a `$d[$i±offset]` reference string for a given relative offset.
      */
-    protected function applyDivider(string $out, int $divider): ?string
+    private function cellRef(int $offset): string
     {
-        $divider = $divider ?: 1;
-        $failed = false;
+        return match (true) {
+            $offset > 0  => '$d[$i+' . $offset . ']',
+            $offset === 0 => '$d[$i]',
+            default       => '$d[$i' . $offset . ']',
+        };
+    }
 
-        $result = preg_replace_callback(
-            '/\*\((\d+)\)/S',
-            static function (array $m) use ($divider, &$failed): string {
-                $c = (int) self::pcreGroup($m, 1);
-                if ($c === $divider) {
-                    return '';
-                }
-                if ($c % $divider === 0) {
-                    return '*' . intdiv($c, $divider);
-                }
-                $failed = true;
-                return '';
-            },
-            $out,
-        ) ?? $out;
+    /**
+     * Parse a flat loop body and extract the controller step (divider) and the
+     * per-iteration delta for every non-controller cell.
+     *
+     * Rules:
+     * - The first `M` opcode encountered at pointer position 0 is the controller;
+     *   subsequent `M` ops at position 0 add to the same divider.
+     * - Any `P` opcode at position 0 means an increment-controller loop that
+     *   relies on 8-bit wrap-around; those cannot be safely linearised, so null
+     *   is returned.
+     * - Any opcode other than M, P, m, p also causes a null return.
+     *
+     * @return array{divider: int, effects: array<int, int>}|null
+     */
+    private function collectLoopEffects(string $str): ?array
+    {
+        $pos     = 0;
+        $divider = 0;
+        /** @var array<int, int> $effects */
+        $effects = [];
 
-        return $failed ? null : $result;
+        $len = strlen($str);
+        for ($k = 0; $k < $len; $k++) {
+            if ((string) (int) $str[$k] === $str[$k]) {
+                $num = (int) substr($str, $k++, 2);
+                $op  = $str[++$k];
+            } else {
+                $num = 1;
+                $op  = $str[$k];
+            }
+
+            switch ($op) {
+                case 'm':
+                    $pos -= $num;
+                    break;
+
+                case 'p':
+                    $pos += $num;
+                    break;
+
+                case 'M':
+                    if ($pos === 0) {
+                        $divider += $num;
+                    } else {
+                        $effects[$pos] = ($effects[$pos] ?? 0) - $num;
+                    }
+                    break;
+
+                case 'P':
+                    if ($pos === 0) {
+                        // Increment at controller position: wrap-around loop, cannot linearise.
+                        return null;
+                    }
+                    $effects[$pos] = ($effects[$pos] ?? 0) + $num;
+                    break;
+
+                default:
+                    return null; // c, l, r, or unexpected opcode
+            }
+        }
+
+        return $divider > 0 ? ['divider' => $divider, 'effects' => $effects] : null;
+    }
+
+    /**
+     * Generate straight-line PHP for a loop where every per-iteration delta
+     * divides evenly by $divider.  All effects are expressed as `$d[$i] * K`
+     * multiplications (integer K).
+     *
+     * @param array<int, int> $effects  offset => net delta per iteration
+     */
+    private function genStraightLine(array $effects, int $divider): string
+    {
+        ksort($effects);
+        $out = '';
+
+        foreach ($effects as $offset => $delta) {
+            $factor = intdiv($delta, $divider);
+            if ($factor === 0) {
+                continue;
+            }
+
+            $ref    = $this->cellRef($offset);
+            $absF   = abs($factor);
+            $op     = $factor > 0 ? '+' : '-';
+            $mult   = $absF === 1 ? '$d[$i]' : '$d[$i]*' . $absF;
+
+            if ($this->cellMask !== self::MASK_INT) {
+                $out .= $ref . '=(' . $ref . $op . $mult . ')&' . $this->cellMask . ';';
+            } else {
+                $absOp = $absF === 1 ? 'abs($d[$i])' : 'abs($d[$i])*' . $absF;
+                $out .= $ref . $op . '=' . $absOp . ';';
+            }
+        }
+
+        return $out . '$d[$i]=0;';
+    }
+
+    /**
+     * Generate the "fast path" PHP for the else-branch of a conditional
+     * optimisation where some per-iteration deltas do not divide evenly by
+     * $divider.  The guard guarantees that $d[$i] % $divider === 0 here, so
+     * it is safe to use intdiv (or a bitshift for power-of-2 divisors).
+     *
+     * @param array<int, int> $effects  offset => net delta per iteration
+     */
+    private function genFastPath(array $effects, int $divider): string
+    {
+        ksort($effects);
+
+        // For power-of-2 divisors, a right-shift is faster than division.
+        // For other divisors, use `(int)($d[$i]/D)` rather than `intdiv($d[$i],D)`
+        // because `intdiv(a,b)` contains a comma which is an IR input opcode (,)
+        // and would be replaced by the read-input code during strtr.
+        $isPow2   = ($divider & ($divider - 1)) === 0;
+        $shift    = $isPow2 ? (int) log($divider, 2) : 0;
+        $quotient = $isPow2
+            ? '($d[$i]>>' . $shift . ')'
+            : '(int)($d[$i]/' . $divider . ')';
+
+        $out = '';
+
+        foreach ($effects as $offset => $delta) {
+            if ($delta === 0) {
+                continue;
+            }
+
+            $ref      = $this->cellRef($offset);
+            $absDelta = abs($delta);
+            $op       = $delta > 0 ? '+' : '-';
+
+            if ($delta % $divider === 0) {
+                // Integer factor: reuse the cheaper $d[$i]*K form.
+                $factor = abs(intdiv($delta, $divider));
+                $mult   = $factor === 1 ? '$d[$i]' : '$d[$i]*' . $factor;
+
+                if ($this->cellMask !== self::MASK_INT) {
+                    $out .= $ref . '=(' . $ref . $op . $mult . ')&' . $this->cellMask . ';';
+                } else {
+                    $absOp = $factor === 1 ? 'abs($d[$i])' : 'abs($d[$i])*' . $factor;
+                    $out .= $ref . $op . '=' . $absOp . ';';
+                }
+            } else {
+                // Non-integer factor: runtime quotient required.
+                $mult = $absDelta === 1 ? $quotient : $quotient . '*' . $absDelta;
+
+                if ($this->cellMask !== self::MASK_INT) {
+                    $out .= $ref . '=(' . $ref . $op . $mult . ')&' . $this->cellMask . ';';
+                } else {
+                    $rhs = $absDelta === 1 ? $quotient : $quotient . '*' . $absDelta;
+                    $out .= $ref . $op . '=' . $rhs . ';';
+                }
+            }
+        }
+
+        return $out . '$d[$i]=0;';
     }
 
     /**
      * Try to collapse a simple loop body (e.g. `[->+<]`) into straight-line
      * cell arithmetic. Falls back to a `while` when optimisation is not possible.
+     *
+     * When the controller decrements by D > 1 per iteration and some target
+     * cells change by a value not divisible by D, a conditional guard is emitted:
+     *
+     *   if ($d[$i] % D) { W<ir_body>R } else { <fast_path> }
+     *
+     * `W` is a pseudobytecode for "raw while, no further loop optimisation";
+     * the compilation pipeline converts it to `while($d[$i]){` via strtr.
      */
     protected function cyclesOp(string $str): string
     {
@@ -369,72 +518,52 @@ class Compiler
             return $this->cyclesOpWithClear($str);
         }
 
-        $out = '';
-        $pos = 0;
-        $start = false;
-        $divider = 0;
+        $analysis = $this->collectLoopEffects($str);
+        if ($analysis === null) {
+            return 'L' . $str . 'R';
+        }
 
-        $len = strlen($str);
-        for ($k = 0; $k < $len; $k++) {
-            if ((string) (int) $str[$k] === $str[$k]) {
-                $num = (int) substr($str, $k++, 2);
-                $op = $str[++$k];
-            } else {
-                $num = 1;
-                $op = $str[$k];
-            }
+        ['divider' => $divider, 'effects' => $effects] = $analysis;
 
-            $posStr = match (true) {
-                $pos > 0  => '+' . $pos,
-                $pos === 0 => '',
-                default   => (string) $pos,
-            };
-
-            switch ($op) {
-                case 'm':
-                    $pos -= $num;
-                    break;
-
-                case 'p':
-                    $pos += $num;
-                    break;
-
-                case 'M':
-                case 'P':
-                    if ($start || $pos !== 0) {
-                        $operator = $op === 'M' ? '-' : '+';
-                        $ref = '$d[$i' . $posStr . ']';
-
-                        if ($this->cellMask !== self::MASK_INT) {
-                            // Bounded cells (8/16-bit): wrap with mask; cells are ≥ 0, abs() not needed.
-                            $out .= $ref . '=(' . $ref . $operator . '$d[$i]*(' . $num . '))&' . $this->cellMask . ';';
-                        } else {
-                            // Unbounded: abs() guards against negative source cells.
-                            $out .= $ref . $operator . '=abs($d[$i])*(' . $num . ');';
-                        }
-                    } else {
-                        $start = true;
-                        $divider += $num;
-                        $applied = $this->applyDivider($out, $divider);
-                        if ($applied === null) {
-                            return 'L' . $str . 'R';
-                        }
-                        $out = $applied;
-                    }
-                    break;
+        // Check whether every per-iteration delta divides evenly by the controller step.
+        $allInteger = true;
+        foreach ($effects as $delta) {
+            if ($delta % $divider !== 0) {
+                $allInteger = false;
+                break;
             }
         }
 
-        if ($start) {
-            $out .= '$d[$i]=0;';
-            $applied = $this->applyDivider($out, $divider);
-            if ($applied === null) {
-                return 'L' . $str . 'R';
-            }
-            return $applied;
+        if ($allInteger) {
+            return $this->genStraightLine($effects, $divider);
         }
 
-        return 'L' . $str . 'R';
+        // Non-integer case: only safe to optimise for bounded cells (8/16-bit)
+        // where $d[$i] is always non-negative and the divisibility check is reliable.
+        if ($this->cellMask === self::MASK_INT) {
+            return 'L' . $str . 'R';
+        }
+
+        // Emit a runtime divisibility guard followed by the unconditional fast path:
+        //
+        //   if (cell NOT divisible by D) { W<ir_body>R }   ← while fallback
+        //   <fast_path>                                      ← runs when divisible
+        //
+        // For bounded cells (8/16-bit), a non-divisible value makes the loop
+        // controller never reach 0 (e.g. odd value with [--…] cycles through
+        // 255→253→…→1→255→…), so the while is an infinite loop and execution
+        // never reaches the fast path.  Therefore the fast path can be placed
+        // unconditionally after the if — it only runs when the while was skipped.
+        //
+        // NOTE: `else` cannot be used here because it contains the character `l`
+        // which is an IR opcode and would be mis-compiled by pattern 8.
+        // The `W` pseudobytecode marks "while without further loop optimisation".
+        $guard    = ($divider & ($divider - 1)) === 0          // power of 2?
+            ? '$d[$i]&' . ($divider - 1)                       //   bitwise AND
+            : '$d[$i]%' . $divider;
+        $fastPath = $this->genFastPath($effects, $divider);
+
+        return 'if(' . $guard . '){W' . $str . 'R}' . $fastPath;
     }
 
     /**
@@ -921,6 +1050,7 @@ class Compiler
             'r' => 'for(;$d[$i];++$i);',
             ',' => 'if(!$in){$in=array_values(unpack("c*",rtrim(fgets(STDIN))));$in[]=0;};$d[$i]=' . $readInput . ';',
             'L' => 'while($d[$i]){',
+            'W' => 'while($d[$i]){', // raw while: no loop optimisation attempted
             'R' => '}',
             '#' => 'echo "$i: $d[$i]\n";',
         ];

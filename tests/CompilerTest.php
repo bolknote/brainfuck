@@ -690,4 +690,149 @@ class CompilerTest extends TestCase
             . '>>>#';
         $this->assertStringContainsString(': 0', $this->execute($bf));
     }
+
+    // -----------------------------------------------------------------------
+    // Conditional (divisor > 1) loop optimisation
+    // -----------------------------------------------------------------------
+
+    /**
+     * [-->+<]: controller decrements by 2 per iteration, cell[1] increments by
+     * 1 per iteration.  Non-integer factor (1/2) → conditional optimisation.
+     *
+     * With even source (6): cell[1] += 3 = 3, then +62 → 65 → 'A'.
+     */
+    public function testConditionalOptEvenSource(): void
+    {
+        // cell[0]=6 (even), [-->+<] → cell[1]+=3, cell[0]=0
+        $bf = str_repeat('+', 6) . '[-->+<]>' . str_repeat('+', 62) . '.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * With an odd source, the loop terminates correctly through the while
+     * fallback (the conditional guard dispatches to `W…R`).
+     * cell[0]=5 → iterates 2 full rounds, leaves cell[0]=1 (odd→wraps in 8-bit),
+     * but because 5--2=3, 3--2=1, 1--2=255, …; the loop runs until cell[0]=0.
+     * In 8-bit mode an odd value makes the [--…] loop truly infinite —
+     * instead test with divider=3: [---+<+>] cell[0]=9 → 3 iters → cell[1]=3.
+     */
+    public function testConditionalOptDiv3EvenSource(): void
+    {
+        // [--->>++<<]: div=3, effect {2:+2}.  9/3*2 = 6; +59 → 65 → 'A'.
+        $bf = str_repeat('+', 9) . '[--->>++<<]>>' . str_repeat('+', 59) . '.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * Multiple non-integer effects: div=2, effects {1:+1, 2:+1}.
+     * [-->>+<+<]: cell[0]=10 → 5 iters → cell[1]+=5, cell[2]+=5.
+     * Verify cell[1]=5 → +60 = 65 → 'A'.
+     */
+    public function testConditionalOptMultipleEffects(): void
+    {
+        // cell[0]=10, [-->>+<+<] → cell[1]+=5, cell[2]+=5, cell[0]=0
+        $bf = str_repeat('+', 10) . '[-->>+<+<]>' . str_repeat('+', 60) . '.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * Code shape: a div-2 non-integer loop must emit a conditional `if` guard
+     * for the while fallback — `if($d[$i]&1){while(…){…}}` — followed by the
+     * unconditional fast path.
+     */
+    public function testConditionalOptEmitsIfGuard(): void
+    {
+        // [-->+<] has a non-integer factor (1/2)
+        $code = $this->compiler->toPHP('+[-->+<]');
+        $this->assertMatchesRegularExpression('/if\(\$d\[.*\]&1\)/', $code);
+    }
+
+    /**
+     * Code shape: the fallback while loop inside the guard must use the raw
+     * `while` form (no further optimisation; the `W` pseudobytecode path).
+     */
+    public function testConditionalOptFallbackIsWhile(): void
+    {
+        $code = $this->compiler->toPHP('+[-->+<]');
+        $this->assertStringContainsString('while($d[$i]){', $code);
+    }
+
+    /**
+     * Code shape: the fast path must use a right-shift for power-of-2 divisors.
+     * div=2 → `>>1`.
+     */
+    public function testConditionalOptUsesBitshift(): void
+    {
+        $code = $this->compiler->toPHP('+[-->+<]');
+        $this->assertStringContainsString('>>1', $code);
+    }
+
+    /**
+     * div=3 (non-power-of-2) → fast path must use `(int)($d[$i]/3)`.
+     * `intdiv(a,b)` cannot be used here because the comma is the IR input
+     * opcode and would be corrupted by the compilation pipeline.
+     */
+    public function testConditionalOptUsesIntdivForNonPow2(): void
+    {
+        // [--->>+<<]: div=3, effect at pos=2 is +1 (non-divisible by 3)
+        $code = $this->compiler->toPHP('+[--->>+<<]');
+        $this->assertStringContainsString('(int)($d[$i]/3)', $code);
+    }
+
+    /**
+     * Critical correctness test: when divider is not a power of 2 AND the
+     * start value is not divisible by it, in 8-bit mode gcd(D, 256) may equal
+     * 1 (e.g. D=3), so the while loop terminates via wrap-around in some
+     * non-obvious number of iterations.  Our generated code must:
+     *   1. take the if-branch (guard true)
+     *   2. run the while to completion, modifying cells per iteration
+     *   3. afterwards $d[$i] = 0 → unconditional fast path becomes a no-op
+     *   4. final cell state must equal what the original BF would produce
+     *
+     * For D=3, start=7 in 8-bit: 3·171 ≡ 1 (mod 256), so iterations = 7·171
+     * mod 256 = 173.  Body `[--->>+<<]` adds 1 to cell[2] each iter, so
+     * cell[2] = 173 mod 256 = 173 = 0xAD.
+     */
+    public function testConditionalOptWrapTerminationIsCorrect(): void
+    {
+        // cell[0]=7, [--->>+<<] → after wrap loop: cell[2]=173
+        // (#) prints absolute tape index, so we only check the trailing value.
+        $bf = str_repeat('+', 7) . '[--->>+<<]>>#';
+        $this->assertStringEndsWith(": 173\n", $this->execute($bf));
+    }
+
+    /**
+     * Power-of-2 divisor D=4 with a non-integer factor (effect=+1 at pos 1):
+     * each iteration cell[0]-=4, cell[1]+=1.  start=12 → 3 iters → cell[1]=3.
+     * Fast path uses `$d[$i]>>2`.
+     */
+    public function testConditionalOptPow2Div4(): void
+    {
+        $bf = str_repeat('+', 12) . '[---->+<]>' . str_repeat('+', 62) . '.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * Mixed effects: some divisible by D, some not.
+     * D=4, body `[---->+>++<<]`: effects {1:+1 (non-div), 2:+2 (non-div)}.
+     * Both use the runtime quotient.  start=8 → 2 iters → cell[1]=2, cell[2]=4.
+     * Verify cell[2]=4 → +61 = 65 = 'A'.
+     */
+    public function testConditionalOptMixedEffects(): void
+    {
+        $bf = str_repeat('+', 8) . '[---->+>++<<]>>' . str_repeat('+', 61) . '.';
+        $this->assertSame('A', $this->execute($bf));
+    }
+
+    /**
+     * Zero source: the loop body never runs in original BF semantics, and
+     * neither path of the conditional optimisation should produce side
+     * effects.  Verify by checking cell[1] stays at its pre-loop value.
+     */
+    public function testConditionalOptZeroSource(): void
+    {
+        // cell[0]=0, [-->+<] runs 0 times; cell[1] should remain 65 = 'A'.
+        $bf = '>' . str_repeat('+', 65) . '<[-->+<]>.';
+        $this->assertSame('A', $this->execute($bf));
+    }
 }
