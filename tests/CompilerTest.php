@@ -44,6 +44,57 @@ class CompilerTest extends TestCase
         }
     }
 
+    /**
+     * Minimal reference BF interpreter (no optimisation, strict 8-bit cells).
+     * Used to cross-check compiler output against ground truth.
+     */
+    private function naive(string $bf, string $input = ''): string
+    {
+        $code = preg_replace('/[^><+\-.,\[\]]/', '', $bf) ?? '';
+        $len  = strlen($code);
+        $tape = array_fill(0, 65536, 0);
+        $ptr  = 0;
+        $ip   = 0;
+        $out  = '';
+
+        while ($ip < $len) {
+            switch ($code[$ip]) {
+                case '>': ++$ptr; break;
+                case '<': --$ptr; break;
+                case '+': $tape[$ptr] = ($tape[$ptr] + 1) & 255; break;
+                case '-': $tape[$ptr] = ($tape[$ptr] - 1) & 255; break;
+                case '.': $out .= chr($tape[$ptr]); break;
+                case ',':
+                    $tape[$ptr] = $input !== '' ? ord($input[0]) & 255 : 0;
+                    $input = substr($input, 1);
+                    break;
+                case '[':
+                    if ($tape[$ptr] === 0) {
+                        $depth = 1;
+                        while ($depth > 0) {
+                            $c = $code[++$ip];
+                            if ($c === '[') ++$depth;
+                            elseif ($c === ']') --$depth;
+                        }
+                    }
+                    break;
+                case ']':
+                    if ($tape[$ptr] !== 0) {
+                        $depth = 1;
+                        while ($depth > 0) {
+                            $c = $code[--$ip];
+                            if ($c === ']') ++$depth;
+                            elseif ($c === '[') --$depth;
+                        }
+                    }
+                    break;
+            }
+            ++$ip;
+        }
+
+        return $out;
+    }
+
     public function testOutputSingleChar(): void
     {
         $this->assertSame('A', $this->execute(str_repeat('+', 65) . '.'));
@@ -696,6 +747,42 @@ class CompilerTest extends TestCase
     // -----------------------------------------------------------------------
 
     /**
+     * Differential: optimised compiler output must match naive interpreter for
+     * all conditional-optimisation patterns (divisor > 1, non-integer factors).
+     * This is stronger than hand-computed expected values: any wrong shortcut
+     * in genFastPath will produce a mismatch here.
+     *
+     * @return array<string, array{string}>
+     */
+    public static function conditionalOptProgramProvider(): array
+    {
+        return [
+            // div=2, even source
+            'div2 even'       => [str_repeat('+', 6)  . '[-->+<]>>'  . str_repeat('+', 62) . '.'],
+            // div=2, small even source
+            'div2 small'      => [str_repeat('+', 4)  . '[-->+<]>.'  ],
+            // div=2, multiple non-integer effects
+            'div2 multi'      => [str_repeat('+', 10) . '[-->>+<+<]>>'   . str_repeat('+', 60) . '.'],
+            // div=3, source divisible by 3
+            'div3 divisible'  => [str_repeat('+', 9)  . '[--->>++<<]>>'  . str_repeat('+', 59) . '.'],
+            // div=3, source NOT divisible — while terminates via 8-bit wrap
+            'div3 non-div'    => [str_repeat('+', 7)  . '[--->>+<<]>>.'  ],
+            // div=4, source divisible
+            'div4 divisible'  => [str_repeat('+', 12) . '[---->+<]>.'    ],
+            // div=4, mixed integer and non-integer effects
+            'div4 mixed'      => [str_repeat('+', 8)  . '[---->+>++<<]>>.' ],
+            // zero source: loop body must not execute at all
+            'zero source'     => ['>' . str_repeat('+', 65) . '<[-->+<]>.'],
+        ];
+    }
+
+    #[DataProvider('conditionalOptProgramProvider')]
+    public function testConditionalOptMatchesNaive(string $bf): void
+    {
+        $this->assertSame($this->naive($bf), $this->execute($bf));
+    }
+
+    /**
      * [-->+<]: controller decrements by 2 per iteration, cell[1] increments by
      * 1 per iteration.  Non-integer factor (1/2) → conditional optimisation.
      *
@@ -703,36 +790,26 @@ class CompilerTest extends TestCase
      */
     public function testConditionalOptEvenSource(): void
     {
-        // cell[0]=6 (even), [-->+<] → cell[1]+=3, cell[0]=0
         $bf = str_repeat('+', 6) . '[-->+<]>' . str_repeat('+', 62) . '.';
-        $this->assertSame('A', $this->execute($bf));
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
-     * With an odd source, the loop terminates correctly through the while
-     * fallback (the conditional guard dispatches to `W…R`).
-     * cell[0]=5 → iterates 2 full rounds, leaves cell[0]=1 (odd→wraps in 8-bit),
-     * but because 5--2=3, 3--2=1, 1--2=255, …; the loop runs until cell[0]=0.
-     * In 8-bit mode an odd value makes the [--…] loop truly infinite —
-     * instead test with divider=3: [---+<+>] cell[0]=9 → 3 iters → cell[1]=3.
+     * div=3, source divisible: 9/3=3 iters, cell[2]+=2*3=6.
      */
     public function testConditionalOptDiv3EvenSource(): void
     {
-        // [--->>++<<]: div=3, effect {2:+2}.  9/3*2 = 6; +59 → 65 → 'A'.
         $bf = str_repeat('+', 9) . '[--->>++<<]>>' . str_repeat('+', 59) . '.';
-        $this->assertSame('A', $this->execute($bf));
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
      * Multiple non-integer effects: div=2, effects {1:+1, 2:+1}.
-     * [-->>+<+<]: cell[0]=10 → 5 iters → cell[1]+=5, cell[2]+=5.
-     * Verify cell[1]=5 → +60 = 65 → 'A'.
      */
     public function testConditionalOptMultipleEffects(): void
     {
-        // cell[0]=10, [-->>+<+<] → cell[1]+=5, cell[2]+=5, cell[0]=0
         $bf = str_repeat('+', 10) . '[-->>+<+<]>' . str_repeat('+', 60) . '.';
-        $this->assertSame('A', $this->execute($bf));
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -795,44 +872,36 @@ class CompilerTest extends TestCase
      */
     public function testConditionalOptWrapTerminationIsCorrect(): void
     {
-        // cell[0]=7, [--->>+<<] → after wrap loop: cell[2]=173
-        // (#) prints absolute tape index, so we only check the trailing value.
-        $bf = str_repeat('+', 7) . '[--->>+<<]>>#';
-        $this->assertStringEndsWith(": 173\n", $this->execute($bf));
+        // cell[0]=7, [--->>+<<]: guard true (7%3≠0), while terminates via
+        // 8-bit wrap-around after 173 iterations.  Compare against naive.
+        $bf = str_repeat('+', 7) . '[--->>+<<]>>.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
-     * Power-of-2 divisor D=4 with a non-integer factor (effect=+1 at pos 1):
-     * each iteration cell[0]-=4, cell[1]+=1.  start=12 → 3 iters → cell[1]=3.
-     * Fast path uses `$d[$i]>>2`.
+     * Power-of-2 divisor D=4: fast path uses `$d[$i]>>2`.
      */
     public function testConditionalOptPow2Div4(): void
     {
-        $bf = str_repeat('+', 12) . '[---->+<]>' . str_repeat('+', 62) . '.';
-        $this->assertSame('A', $this->execute($bf));
+        $bf = str_repeat('+', 12) . '[---->+<]>.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
-     * Mixed effects: some divisible by D, some not.
-     * D=4, body `[---->+>++<<]`: effects {1:+1 (non-div), 2:+2 (non-div)}.
-     * Both use the runtime quotient.  start=8 → 2 iters → cell[1]=2, cell[2]=4.
-     * Verify cell[2]=4 → +61 = 65 = 'A'.
+     * Mixed integer and non-integer effects with D=4.
      */
     public function testConditionalOptMixedEffects(): void
     {
-        $bf = str_repeat('+', 8) . '[---->+>++<<]>>' . str_repeat('+', 61) . '.';
-        $this->assertSame('A', $this->execute($bf));
+        $bf = str_repeat('+', 8) . '[---->+>++<<]>>.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
-     * Zero source: the loop body never runs in original BF semantics, and
-     * neither path of the conditional optimisation should produce side
-     * effects.  Verify by checking cell[1] stays at its pre-loop value.
+     * Zero source: neither path must produce side effects.
      */
     public function testConditionalOptZeroSource(): void
     {
-        // cell[0]=0, [-->+<] runs 0 times; cell[1] should remain 65 = 'A'.
         $bf = '>' . str_repeat('+', 65) . '<[-->+<]>.';
-        $this->assertSame('A', $this->execute($bf));
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 }
