@@ -35,6 +35,11 @@ php run.php -Y fork_example.bf
 - `--brainfork` — same as `-Y`.
 - `-d` — enable debug output for `#` opcode handling.
 - `--debug` — same as `-d`.
+- `-@` — enable the non-standard `@` opcode (`random_int()` into the current cell).
+- `--random` — same as `-@`.
+- `-W` — normalise input for BF programs that expect Windows line endings: lone `\n` bytes become `\r\n`.
+- `--crlf-input` — same as `-W`.
+- `--immediate-stdin` / `-I` — read stdin one byte at a time for `,`; on Unix-like systems, when stdin is an interactive TTY, `run.php` temporarily switches it to raw mode and restores it on exit. On Windows and non-TTY stdin, this still reads byte-by-byte from PHP's stream, but does not change console input mode.
 
 ```bash
 # Long-form Brainfork aliases
@@ -43,6 +48,10 @@ php run.php --brainfork fork_example.bf
 
 # Debug mode
 php run.php --debug samples/programs/tests/cell_size_8bit.bf
+
+# Programs that expect CRLF input or byte-at-a-time interactive input
+php run.php -W samples/programs/io/echo2.bf
+php run.php --immediate-stdin samples/programs/io/echo2.bf
 ```
 
 ### API
@@ -103,8 +112,9 @@ Beyond standard BF (`+ - < > [ ] . ,`), the compiler recognises:
 |--------|---------|
 | `#` | Debug: print current cell index and value (`$i: $d[$i]`) |
 | `Y` | Optional ([Brainfork](https://esolangs.org/wiki/Brainfork)): fork via `pcntl_fork()` — parent zeroes the current cell; child moves the pointer right and sets that cell to `1`. |
+| `@` | Optional random byte/word/integer: assign `random_int(0, N)` to the current cell, where `N` follows the configured cell width. |
 
-`#` is always accepted. `Y` is accepted only when Brainfork is enabled (`new Compiler(..., brainfork: true)` or CLI `-Y` / `--fork` / `--brainfork`); otherwise `Y` is removed like any non-BF character (same idea as plain BF ignoring unknown symbols).
+`#` is always accepted. `Y` is accepted only when Brainfork is enabled (`new Compiler(..., brainfork: true)` or CLI `-Y` / `--fork` / `--brainfork`); `@` is accepted only when random mode is enabled (`new Compiler(..., randomOpcode: true)` or CLI `-@` / `--random`). Disabled extension opcodes are removed like any non-BF character (same idea as plain BF ignoring unknown symbols).
 
 Requires the PHP **pcntl** extension when compiling or running programs that use `Y`.
 

@@ -279,7 +279,13 @@ class CompilerTest extends TestCase
 
     private function executeWith(int $cellBits, string $bf, string $input = '', bool $debug = false, bool $randomOpcode = false, bool $inputCrLf = false, bool $stdinLineBuffered = true): string
     {
-        $compiler = new Compiler($cellBits, false, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered);
+        $compiler = new Compiler(
+            cellBits: $cellBits,
+            debug: $debug,
+            randomOpcode: $randomOpcode,
+            inputCrLf: $inputCrLf,
+            stdinLineBuffered: $stdinLineBuffered,
+        );
         $level = ob_get_level();
         ob_start();
 
@@ -292,6 +298,58 @@ class CompilerTest extends TestCase
             if (ob_get_level() > $level) {
                 ob_end_clean();
             }
+        }
+    }
+
+    /**
+     * @param list<string> $args
+     * @return array{exitCode: int, stdout: string, stderr: string}
+     */
+    private function runCli(array $args, string $stdin = ''): array
+    {
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $process = proc_open([PHP_BINARY, __DIR__ . '/../run.php', ...$args], $descriptors, $pipes, dirname(__DIR__));
+        if (!is_resource($process)) {
+            throw new \RuntimeException('Failed to start run.php');
+        }
+
+        fwrite($pipes[0], $stdin);
+        fclose($pipes[0]);
+
+        $stdout = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+
+        return [
+            'exitCode' => proc_close($process),
+            'stdout' => is_string($stdout) ? $stdout : '',
+            'stderr' => is_string($stderr) ? $stderr : '',
+        ];
+    }
+
+    /**
+     * @param list<string> $args
+     * @return array{exitCode: int, stdout: string, stderr: string}
+     */
+    private function runCliSource(string $source, array $args = [], string $stdin = ''): array
+    {
+        $path = tempnam(sys_get_temp_dir(), 'bf-');
+        if ($path === false) {
+            throw new \RuntimeException('Failed to create temporary BF file');
+        }
+
+        try {
+            file_put_contents($path, $source);
+
+            return $this->runCli([...$args, $path], $stdin);
+        } finally {
+            @unlink($path);
         }
     }
 
@@ -996,21 +1054,21 @@ class CompilerTest extends TestCase
 
     public function testAtOpcodeEmitsRandomInt8Bit(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_8, false, false, true);
+        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, randomOpcode: true);
         $code = $c->toPHP('@');
         $this->assertStringContainsString('random_int(0,255)', $code);
     }
 
     public function testAtOpcodeEmitsRandomInt16Bit(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_16, false, false, true);
+        $c = new Compiler(cellBits: Compiler::CELL_BITS_16, randomOpcode: true);
         $code = $c->toPHP('@');
         $this->assertStringContainsString('random_int(0,65535)', $code);
     }
 
     public function testAtOpcodeEmitsRandomIntUnbounded(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_UNBOUNDED, false, false, true);
+        $c = new Compiler(cellBits: Compiler::CELL_BITS_UNBOUNDED, randomOpcode: true);
         $code = $c->toPHP('@');
         $this->assertStringContainsString('random_int(0,PHP_INT_MAX)', $code);
     }
@@ -1018,7 +1076,7 @@ class CompilerTest extends TestCase
     public function testAtOpcodePrintsByteInRange(): void
     {
         for ($i = 0; $i < 64; ++$i) {
-            $out = $this->executeWith(8, '@.', '', false, true);
+            $out = $this->executeWith(8, '@.', randomOpcode: true);
             $this->assertSame(1, strlen($out));
             $this->assertGreaterThanOrEqual(0, ord($out));
             $this->assertLessThanOrEqual(255, ord($out));
@@ -1027,62 +1085,88 @@ class CompilerTest extends TestCase
 
     public function testInputCrLfInsertsCrBeforeLoneLfInPrefilledBuffer(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
-        $code = $c->compile('+', "X\n");
-        // Prefill is built at run time in the generated script via PHP_OS_FAMILY + preg_replace.
-        $this->assertStringContainsString('$__bfIn=', $code);
-        $this->assertStringContainsString('PHP_OS_FAMILY', $code);
-        $this->assertStringContainsString('preg_replace', $code);
+        $out = $this->executeWith(Compiler::CELL_BITS_8, ',,,.', "X\n", inputCrLf: true);
+        $this->assertSame("\n", $out);
     }
 
     public function testInputCrLfLeavesExistingCrLfUnchanged(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
-        $code = $c->compile('+', "X\r\n");
-        $this->assertStringContainsString('$__bfIn=', $code);
-        $this->assertStringContainsString('PHP_OS_FAMILY', $code);
+        $out = $this->executeWith(Compiler::CELL_BITS_8, ',,,.', "X\r\n", inputCrLf: true);
+        $this->assertSame("\n", $out);
     }
 
     public function testInputCrLfDisabledLeavesUnixLf(): void
     {
-        $c = new Compiler();
-        $code = $c->compile('+', "X\n");
-        $this->assertStringContainsString('$in=[88,10,0]', $code);
+        $this->assertSame("\n", $this->execute(',,.', "X\n"));
     }
 
     public function testInputCrLfCommaHandlerContainsPregReplace(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
+        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, inputCrLf: true);
         $code = $c->toPHP(',');
         $this->assertStringContainsString('preg_replace', $code);
-        $this->assertStringContainsString('PHP_OS_FAMILY', $code);
         $this->assertStringContainsString('fgets(STDIN)', $code);
     }
 
     public function testLineBufferedCommaUsesFgets(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, false, true);
+        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, stdinLineBuffered: true);
         $code = $c->toPHP(',');
         $this->assertStringContainsString('fgets(STDIN)', $code);
-        $this->assertStringNotContainsString('fread(STDIN,1)', $code);
+        $this->assertStringNotContainsString('fgetc(STDIN)', $code);
     }
 
-    public function testImmediateStdinCommaUsesFread(): void
+    public function testImmediateStdinCommaUsesFgetc(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, false, false);
+        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, stdinLineBuffered: false);
         $code = $c->toPHP(',');
-        $this->assertStringContainsString('fread(STDIN,1)', $code);
+        $this->assertStringContainsString('fgetc(STDIN)', $code);
         $this->assertStringNotContainsString('fgets(STDIN)', $code);
     }
 
     public function testImmediateStdinWithCrLfTracksBfInputPrev(): void
     {
-        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true, false);
+        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, inputCrLf: true, stdinLineBuffered: false);
         $code = $c->compile(',', '');
-        $this->assertStringContainsString('if(PHP_OS_FAMILY!==\'Windows\'){$bfInputPrev=0;}', $code);
+        $this->assertStringContainsString('$bfInputPrev=0;', $code);
         $this->assertStringContainsString('$bfInputPrev', $code);
-        $this->assertStringContainsString('fread(STDIN,1)', $code);
-        $this->assertStringContainsString('PHP_OS_FAMILY', $code);
+        $this->assertStringContainsString('fgetc(STDIN)', $code);
         $this->assertStringContainsString('$o===10', $code);
+    }
+
+    public function testCliCrLfInputFlagNormalisesPipeInput(): void
+    {
+        $result = $this->runCliSource(',,.', ['-W'], "X\n");
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame("\r", $result['stdout']);
+        $this->assertSame('', $result['stderr']);
+    }
+
+    public function testCliImmediateStdinWithCrLfNormalisesByteInput(): void
+    {
+        $result = $this->runCliSource(',,,.', ['--immediate-stdin', '-W'], "X\n");
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame("\n", $result['stdout']);
+        $this->assertSame('', $result['stderr']);
+    }
+
+    public function testCliImmediateStdinReadsConsecutiveBytesBeforeEof(): void
+    {
+        $result = $this->runCliSource(',,.', ['--immediate-stdin'], 'AB');
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame('B', $result['stdout']);
+        $this->assertSame('', $result['stderr']);
+    }
+
+    public function testCliRandomFlagEnablesAtOpcode(): void
+    {
+        $result = $this->runCliSource('@.', ['-@']);
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame(1, strlen($result['stdout']));
+        $this->assertSame('', $result['stderr']);
     }
 }

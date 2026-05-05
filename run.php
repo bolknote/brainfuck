@@ -10,12 +10,43 @@ require __DIR__ . '/vendor/autoload.php';
 
 use BolkNote\Brainfuck\Compiler;
 
+function enableImmediateStdinMode(bool $enabled): ?string
+{
+    if (!$enabled || PHP_OS_FAMILY === 'Windows' || !function_exists('stream_isatty') || !stream_isatty(STDIN)) {
+        return null;
+    }
+
+    $mode = [];
+    exec('stty -g < /dev/tty 2>/dev/null', $mode, $status);
+    if ($status !== 0 || !isset($mode[0]) || $mode[0] === '') {
+        return null;
+    }
+
+    $unused = [];
+    exec('stty raw -echo < /dev/tty 2>/dev/null', $unused, $status);
+    if ($status !== 0) {
+        return null;
+    }
+
+    return $mode[0];
+}
+
+function restoreImmediateStdinMode(?string $mode): void
+{
+    if ($mode === null) {
+        return;
+    }
+
+    exec('stty ' . escapeshellarg($mode) . ' < /dev/tty 2>/dev/null');
+}
+
 $cellBits     = Compiler::DEFAULT_CELL_BITS;
 $brainfork    = false;
 $debug        = false;
 $randomOpcode = false;
-$inputCrLf    = false;
-$args         = [];
+$inputCrLf       = false;
+$stdinLineBuffered = true;
+$args            = [];
 $rawArgv   = $_SERVER['argv'] ?? null;
 $cliArgv   = is_array($rawArgv) ? $rawArgv : [];
 foreach (array_slice($cliArgv, 1) as $arg) {
@@ -32,13 +63,15 @@ foreach (array_slice($cliArgv, 1) as $arg) {
         $randomOpcode = true;
     } elseif ($arg === '--crlf-input' || $arg === '-W') {
         $inputCrLf = true;
+    } elseif ($arg === '--immediate-stdin' || $arg === '-I') {
+        $stdinLineBuffered = false;
     } else {
         $args[] = $arg;
     }
 }
 
 if ($args === [] || $args[0] === '') {
-    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] [--crlf-input|-W] <file.bf>\n");
+    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] [--crlf-input|-W] [--immediate-stdin|-I] <file.bf>\n");
     exit(1);
 }
 
@@ -49,7 +82,19 @@ if ($source === false) {
     exit(1);
 }
 
-$compiler = new Compiler($cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf);
+$compiler = new Compiler(
+    cellBits: $cellBits,
+    brainfork: $brainfork,
+    debug: $debug,
+    randomOpcode: $randomOpcode,
+    inputCrLf: $inputCrLf,
+    stdinLineBuffered: $stdinLineBuffered,
+);
 $code = $compiler->compile($source);
 
-eval($code);
+$stdinMode = enableImmediateStdinMode(!$stdinLineBuffered);
+try {
+    eval($code);
+} finally {
+    restoreImmediateStdinMode($stdinMode);
+}

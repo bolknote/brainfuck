@@ -36,9 +36,12 @@ class Compiler
      * @param bool $randomOpcode If true, opcode `@` assigns `random_int(0, N)` to the current cell,
      *                           where N is `255` (8-bit), `65535` (16-bit), or `PHP_INT_MAX` (unbounded).
      *                           If false (default), `@` is stripped like a comment.
-     * @param bool $inputCrLf    If true, every LF (`\n`) not preceded by CR (`\r`) is rewritten to CRLF
-     *                           (`\r\n`) in stdin and in compile-time input — for BF programs that expect
-     *                           Windows-style line endings.
+     * @param bool $inputCrLf        If true, lone LF (`\n`) not preceded by CR (`\r`) is rewritten to CRLF (`\r\n`)
+     *                               in prefilled input, line-buffered {@see fgets()}, and immediate {@see fgetc()}
+     *                               (with `$bfInputPrev` when needed).
+     * @param bool $stdinLineBuffered If true (default), each `,` reload uses `fgets` — the kernel tty delivers a
+     *                               whole line after Enter. If false, each reload uses `fgetc(STDIN)`; the CLI
+     *                               wrapper puts interactive stdin into raw mode for this case.
      */
     public function __construct(
         int $cellBits = self::DEFAULT_CELL_BITS,
@@ -46,6 +49,7 @@ class Compiler
         private readonly bool $debug = false,
         private readonly bool $randomOpcode = false,
         private readonly bool $inputCrLf = false,
+        private readonly bool $stdinLineBuffered = true,
     ) {
         $this->cellMask = match ($cellBits) {
             self::CELL_BITS_8         => self::MASK_BYTE,
@@ -74,35 +78,61 @@ class Compiler
     public function addHeader(string $str, string $input = ''): string
     {
         $tapeStart = intdiv(self::TAPE_SIZE, 2);
-        $str = '$d=[];$i=' . $tapeStart . ';' . $str;
+        $prefix    = '';
+        if (!$this->stdinLineBuffered && $this->inputCrLf) {
+            $prefix = '$bfInputPrev=0;';
+        }
+        $str = $prefix . '$d=[];$i=' . $tapeStart . ';' . $str;
+
+        if ($input === '') {
+            return '$in=[];' . $str;
+        }
+
+        if ($this->inputCrLf) {
+            $exported = var_export($input, true);
+
+            return '$__bfIn=' . $exported . ';$in=array_values(unpack(\'c*\',(preg_replace(\'/(?<!\r)\n/\',"\r\n",$__bfIn)??$__bfIn)."\0"));' . $str;
+        }
 
         $codes = [];
-        if ($input !== '') {
-            if ($this->inputCrLf) {
-                $input = self::normalizeInputCrLf($input);
-            }
-            $unpacked = unpack('c*', $input . "\0");
-            if (is_array($unpacked)) {
-                $codes = array_map(
-                    static fn (mixed $b): string => match (true) {
-                        is_int($b) => (string) $b,
-                        is_string($b) => $b,
-                        default => '0',
-                    },
-                    array_values($unpacked),
-                );
-            }
+        $unpacked = unpack('c*', $input . "\0");
+        if (is_array($unpacked)) {
+            $codes = array_map(
+                static fn (mixed $b): string => match (true) {
+                    is_int($b) => (string) $b,
+                    is_string($b) => $b,
+                    default => '0',
+                },
+                array_values($unpacked),
+            );
         }
 
         return '$in=[' . implode(',', $codes) . '];' . $str;
     }
 
     /**
-     * Insert CR before each LF that is not already part of CRLF (Unix → Windows text mode).
+     * Emit the `if(!$in){…}` block that refills the comma-input queue from STDIN.
+     *
+     * Line-buffered mode uses {@see fgets()} (whole line after Enter). Immediate mode uses
+     * {@see fgetc()}. With {@see inputCrLf}, lone LF handling uses the same
+     * `preg_replace('/(?<!\r)\n/', …)` rule as prefilled input; immediate mode uses `$bfInputPrev` from {@see addHeader()}.
      */
-    private static function normalizeInputCrLf(string $input): string
+    private function buildCommaReloadBlock(): string
     {
-        return preg_replace('/(?<!\r)\n/', "\r\n", $input) ?? $input;
+        if ($this->stdinLineBuffered) {
+            $block = 'if(!$in){$s=fgets(STDIN)??"";';
+            if ($this->inputCrLf) {
+                $block .= '$s=preg_replace(\'/(?<!\r)\n/\',' . "\"\\r\\n\"" . ',$s)??$s;';
+            }
+
+            return $block . '$in=array_values(unpack("c*",$s));$in[]=0;}';
+        }
+
+        if ($this->inputCrLf) {
+            return 'if(!$in){$b=fgetc(STDIN);if($b===false){$in=[0];}else{$o=ord($b);if($o===10&&($bfInputPrev??0)!==13){$in=[13,10];}else{$in=[$o];}}}';
+        }
+
+        return 'if(!$in){$b=fgetc(STDIN);if($b===false){$in=[0];}else{$in=array_values(unpack(\'c*\',$b));}}';
     }
 
     /**
@@ -1077,18 +1107,16 @@ class Compiler
 
         $readInput = '(array_shift($in)??0)&' . $this->cellMask;
 
-        $stdinToIn = 'if(!$in){$s=fgets(STDIN)??"";';
-        if ($this->inputCrLf) {
-            // Emit `"\\r\\n"` so evaluated PHP gets a real CRLF replacement string.
-            $stdinToIn .= '$s=preg_replace(\'/(?<!\r)\n/\',' . "\"\\r\\n\"" . ',$s)??$s;';
+        $commaBody = $this->buildCommaReloadBlock() . '$d[$i]=' . $readInput . ';';
+        if (!$this->stdinLineBuffered && $this->inputCrLf) {
+            $commaBody .= '$bfInputPrev=($d[$i]??0)&' . $this->cellMask . ';';
         }
-        $stdinToIn .= '$in=array_values(unpack("c*",$s));$in[]=0;};$d[$i]=' . $readInput . ';';
 
         $map = [
             'E' => 'echo chr(($d[$i]??0)&' . self::MASK_BYTE . ');',
             'l' => 'for(;$d[$i]??0;--$i);',
             'r' => 'for(;$d[$i]??0;++$i);',
-            ',' => $stdinToIn,
+            ',' => $commaBody,
             'L' => 'while($d[$i]??0){',
             'W' => 'while($d[$i]??0){', // raw while: no loop optimisation attempted
             'R' => '}',
