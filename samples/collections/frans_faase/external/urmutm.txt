@@ -1,0 +1,90 @@
+This is a universal Turing machine program written for the form of universal
+register machine (URM) described by Frans Faase at
+http://home.planet.nl/~faase009/Ha_bf_Turing.html#URM
+It shows that this form of URM is Turing-complete with only five registers.
+See http://www.hevanet.com/cristofd/brainfuck/utm.b for a description of the
+Turing machine used, which is due to Yurii Rogozhin.
+
+WARNING: It's inherent in the storage method that not only register values,
+but also running times, grow exponentially with the tape length. Thus even
+trivial examples will take an insanely long time to run and you shouldn't
+bother.
+
+Daniel B Cristofani (cristofdathevanetdotcom)
+http://www.hevanet.com/cristofd/brainfuck/
+
+The initial register assignment is:
+Left half of tape in 1; if written out in base six, each digit represents one
+cell, least significant digits representing cells closest to the head.
+Right half of tape in 5, similarly, and the current symbol at the near end.
+State in 3; ranges from 1 to 4, or 0 for "halt".
+
+(
+    s3;(a4;a4;a4;a4;a4;a4;s3)3;             move ((state-1)*6) to 4
+    (a2;a2;s1)1;(a1;a1;a1;s2)2;             (left*6), back into 1
+   
+    This next chunk will divide the right tape by six, adding the remainder
+    (which represents the current symbol) to 4, and putting the quotient
+    (which represents the rest of the tape) in 3; 2 is used as a temp.
+   
+    (a4;s5;(a4;s5;(a4;s5;(a4;s5;(a4;s5;     move up to five units of 5 to 4
+        (s4;s4;s4;s4;s4;a3;s5;              undo that, and move a unit to 3
+        (a2;s5)5)5)5)5)5)5;(a5;s2)2         move rest of 5 to 2 and back
+    )5;                                     and repeat until division done.
+       
+    (a5;s3)3;                               Move right tape back to 5
+   
+    Now 4 is (state-1)*6+symbol, with 24 possible values corresponding to the
+    24 possible state-symbol combinations. We choose new state (in 3), symbol
+    (added to the left tape in 1, to effectively move the head right), and
+    direction flag (in 2; if it's one, we'll move the head left instead).
+   
+    These will be chosen by gradually decrementing 4 in a deep set of nested
+    loops, and setting the state, symbol, and direction to the right value
+    for each combination, in the deepest loop the program will enter when 4
+    holds that combination.
+   
+    For more detail see my utm.b, which this is mechanically translated from.
+   
+    a3;a2;a1;a1;a1;
+      (s4;
+        (s2;a1;s4;
+          (s1;s1;s1;s1;s4;
+            (a2;a1;a1;s4;
+              (a3;a3;a3;s2;s1;s1;s4;
+                (s3;s3;a2;a1;s4;
+                  (s2;s1;s4;
+                    (a3;a2;a1;a1;a1;a1;s4;
+                      (s3;s4;
+                        (s2;s1;s4;
+                          (s1;s4;
+                            (s3;a1;a1;a1;s4;
+                              (a3;a3;s1;s1;s1;s1;s4;
+                                (a3;a1;a1;s4;
+                                  ((s3)3;s4;
+                                    (a3;a3;a3;s1;s4;
+                                      (s3;s3;s1;s4;
+                                        (a3;a2;a1;a1;a1;a1;s4;
+                                          (a3;a3;s2;s1;s1;s1;s1;s1;s4;
+                                            (s3;s3;a2;a1;a1;a1;a1;a1;s4;
+                                              (a3;a3;s2;s1;s1;s4;s4;
+                                                (s1;s4
+    )4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4;
+   
+    (s2;                                        if dir flag = 1, clear it and
+        (a2;a2;a2;a2;a2;a2;s5)5;                move (right*6) to 2
+        (a2;s1;(a2;s1;(a2;s1;(a2;s1;(a2;s1;     divide left/6: quotient in 4,
+            (s2;s2;s2;s2;s2;a4;s1;              add remainder to right in 2,
+            (a5;s1)1)1)1)1)1)1;(a1;s5)5         use 5 as temp.
+        )1;
+        (a5;a5;a5;a5;a5;a5;s2)2;                move right*6 again back to 5
+        (a5;s4;(a5;s4;(a5;s4;(a5;s4;(a5;s4;     divide left/6: quotient in 1,
+            (s5;s5;s5;s5;s5;a1;s4;              add remainder to right in 5,
+            (a2;s4)4)4)4)4)4)4;(a4;s2)2         use 2 as temp.
+        )4
+    )2                                          End of "if dir=1 (go left)"
+)3.                                             End of "while state not halt"
+
+And now, the same thing without comments.
+
+(s3;(a4;a4;a4;a4;a4;a4;s3)3;(a2;a2;s1)1;(a1;a1;a1;s2)2;(a4;s5;(a4;s5;(a4;s5;(a4;s5;(a4;s5;(s4;s4;s4;s4;s4;a3;s5;(a2;s5)5)5)5)5)5)5;(a5;s2)2)5;(a5;s3)3;a3;a2;a1;a1;a1;(s4;(s2;a1;s4;(s1;s1;s1;s1;s4;(a2;a1;a1;s4;(a3;a3;a3;s2;s1;s1;s4;(s3;s3;a2;a1;s4;(s2;s1;s4;(a3;a2;a1;a1;a1;a1;s4;(s3;s4;(s2;s1;s4;(s1;s4;(s3;a1;a1;a1;s4;(a3;a3;s1;s1;s1;s1;s4;(a3;a1;a1;s4;((s3)3;s4;(a3;a3;a3;s1;s4;(s3;s3;s1;s4;(a3;a2;a1;a1;a1;a1;s4;(a3;a3;s2;s1;s1;s1;s1;s1;s4;(s3;s3;a2;a1;a1;a1;a1;a1;s4;(a3;a3;s2;s1;s1;s4;s4;(s1;s4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4)4;(s2;(a2;a2;a2;a2;a2;a2;s5)5;(a2;s1;(a2;s1;(a2;s1;(a2;s1;(a2;s1;(s2;s2;s2;s2;s2;a4;s1;(a5;s1)1)1)1)1)1)1;(a1;s5)5)1;(a5;a5;a5;a5;a5;a5;s2)2;(a5;s4;(a5;s4;(a5;s4;(a5;s4;(a5;s4;(s5;s5;s5;s5;s5;a1;s4;(a2;s4)4)4)4)4)4)4;(a4;s2)2)4)2)3. 

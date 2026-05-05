@@ -1,0 +1,5 @@
+A Very Short Self-Interpreter
+Oleg Mazonka and Daniel B. Cristofani, arXiv:cs/0311032v1, 21 Nov 2003.
+
+The paper defines Dbfi-BF, a BF dialect where code and input share one stream and are separated by the first ! character.
+The programs directory contains the dbfi self-interpreter from section 4.2 and the small examples from section 3.1.
