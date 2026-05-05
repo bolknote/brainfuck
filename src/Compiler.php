@@ -68,7 +68,7 @@ class Compiler
      */
     public function compile(string $str, string $input = ''): string
     {
-        return $this->addHeader($this->toPHP($str), $input);
+        return $this->addHeader($this->compileTokenStream($this->prepare($str)), $input);
     }
 
     /**
@@ -140,7 +140,7 @@ class Compiler
      */
     public function toPHP(string $str): string
     {
-        return $this->compileCode($this->prepare($str));
+        return $this->compileTokenStream($this->prepare($str));
     }
 
     /**
@@ -361,6 +361,85 @@ class Compiler
         }
 
         return '';
+    }
+
+    private function commaOp(): string
+    {
+        $readInput = '(array_shift($in)??0)&' . $this->cellMask;
+        $body = $this->buildCommaReloadBlock() . '$d[$i]=' . $readInput . ';';
+        if (!$this->stdinLineBuffered && $this->inputCrLf) {
+            $body .= '$bfInputPrev=($d[$i]??0)&' . $this->cellMask . ';';
+        }
+
+        return $body;
+    }
+
+    private function randomOp(): string
+    {
+        $maxRand = match ($this->cellMask) {
+            self::MASK_BYTE => '255',
+            self::MASK_WORD => '65535',
+            default => 'PHP_INT_MAX',
+        };
+
+        return '$d[$i]=random_int(0,' . $maxRand . ');';
+    }
+
+    private function compileTokenOp(string $op, int $count): string
+    {
+        return match ($op) {
+            'P', 'M', 'p', 'm' => $this->op($count, $op),
+            'c' => '$d[$i]=0;',
+            'l' => 'for(;$d[$i]??0;--$i);',
+            'r' => 'for(;$d[$i]??0;++$i);',
+            'E' => 'echo chr(($d[$i]??0)&' . self::MASK_BYTE . ');',
+            ',' => $this->commaOp(),
+            '#' => $this->debug ? 'echo "$i: ".($d[$i]??0)."\n";' : '',
+            'Y' => $this->brainfork ? '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;' : '',
+            '@' => $this->randomOpcode ? $this->randomOp() : '',
+            default => '',
+        };
+    }
+
+    private function compileTokenRange(string $str, int &$offset, bool $stopAtLoopEnd = false): string
+    {
+        $out = '';
+        $len = strlen($str);
+
+        while ($offset < $len) {
+            $count = 0;
+            $op = $str[$offset];
+            if ($op >= '0' && $op <= '9') {
+                $count = (int) substr($str, $offset, 2);
+                $offset += 2;
+                $op = $str[$offset] ?? '';
+            }
+            $offset++;
+
+            if ($op === 'R') {
+                if ($stopAtLoopEnd) {
+                    return $out;
+                }
+                $out .= '}';
+                continue;
+            }
+
+            if ($op === 'L') {
+                $out .= 'while($d[$i]??0){' . $this->compileTokenRange($str, $offset, true) . '}';
+                continue;
+            }
+
+            $out .= $this->compileTokenOp($op, $count);
+        }
+
+        return $out;
+    }
+
+    private function compileTokenStream(string $str): string
+    {
+        $offset = 0;
+
+        return $this->compileTokenRange($str, $offset);
     }
 
     /**

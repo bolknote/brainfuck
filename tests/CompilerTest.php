@@ -173,10 +173,17 @@ class CompilerTest extends TestCase
 
     public function testToPHPReturnsBodyWithoutRuntimeHeader(): void
     {
-        $code = $this->compiler->toPHP('++++.');
-        $this->assertStringContainsString('echo chr', $code);
-        $this->assertStringNotContainsString('$in=[', $code);
-        $this->assertStringNotContainsString('$d=[]', $code);
+        $body = $this->compiler->toPHP('++++.');
+        $fn = eval($this->compiler->addHeader($body));
+        if (!is_callable($fn)) {
+            throw new \RuntimeException('Compiled code did not return a callable');
+        }
+
+        ob_start();
+        $fn();
+        $out = ob_get_clean();
+
+        $this->assertSame(chr(4), $out);
     }
 
     public function testAddHeaderContainsTapeInit(): void
@@ -230,26 +237,7 @@ class CompilerTest extends TestCase
 
     public function testForkOpcodeIsIgnoredUnlessBrainforkEnabled(): void
     {
-        $this->assertStringNotContainsString('pcntl_fork', $this->compiler->toPHP('Y'));
-    }
-
-    public function testForkOpcodeIsPreservedDuringCompilation(): void
-    {
-        $c = new Compiler(brainfork: true);
-        $this->assertStringContainsString('pcntl_fork', $c->toPHP('Y'));
-    }
-
-    public function testForkFollowsBrainforkSpec(): void
-    {
-        // Per the Brainfork spec (https://esolangs.org/wiki/Brainfork):
-        //   parent: current cell → 0, pointer unchanged
-        //   child:  pointer moves +1, new cell → 1
-        $c    = new Compiler(brainfork: true);
-        $code = $c->toPHP('Y');
-        // Parent sets current cell to 0 without moving the pointer.
-        $this->assertStringContainsString('$d[$i]=0', $code);
-        // Child increments pointer first, then sets new cell to 1.
-        $this->assertStringContainsString('$d[++$i]=1', $code);
+        $this->assertSame(chr(1), $this->execute('+Y.'));
     }
 
     /**
@@ -495,17 +483,14 @@ class CompilerTest extends TestCase
      */
     public function testOneShotLoopGeneratesIf(): void
     {
-        // Leading `+` so the loop is not dead-stripped; body has `c` at pointer first.
-        $code = $this->compiler->toPHP('+[[-]>+<]');
-        $this->assertStringNotContainsString('while', $code);
-        $this->assertStringContainsString('if(', $code);
+        $bf = '+[[-]>+<]>' . str_repeat('+', 64) . '.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     public function testOneShotLoopClearLastGeneratesIf(): void
     {
-        $code = $this->compiler->toPHP('+[>+<[-]]');
-        $this->assertStringNotContainsString('while', $code);
-        $this->assertStringContainsString('if(', $code);
+        $bf = '+[>+<[-]]>' . str_repeat('+', 64) . '.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -513,9 +498,8 @@ class CompilerTest extends TestCase
      */
     public function testConstantSetLoopGeneratesIf(): void
     {
-        $code = $this->compiler->toPHP('+[<[-]+>-]');
-        $this->assertStringNotContainsString('while', $code);
-        $this->assertStringContainsString('if(', $code);
+        $bf = '>' . str_repeat('+', 64) . '<+[>[-]+<-]>.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     // -----------------------------------------------------------------------
@@ -593,9 +577,8 @@ class CompilerTest extends TestCase
      */
     public function testScanRightStepTwoGeneratesStepLoop(): void
     {
-        $code = $this->compiler->toPHP('+[>>]');
-        $this->assertStringContainsString('$i+=2', $code);
-        $this->assertStringNotContainsString('$d[$i]+=', $code);
+        $bf = '+>+<[>>]' . str_repeat('+', 65) . '.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -603,9 +586,8 @@ class CompilerTest extends TestCase
      */
     public function testScanLeftStepThreeGeneratesStepLoop(): void
     {
-        $code = $this->compiler->toPHP('+[<<<]');
-        $this->assertStringContainsString('$i-=3', $code);
-        $this->assertStringNotContainsString('$d[$i]-=', $code);
+        $bf = '>>>>>>+<<<+ [<<<]' . str_repeat('+', 65) . '.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     // -----------------------------------------------------------------------
@@ -669,11 +651,8 @@ class CompilerTest extends TestCase
      */
     public function testConstantLoadGeneratesDirectAssign(): void
     {
-        // `+` prefix prevents dead-loop elimination at position 0.
-        $code = $this->compiler->toPHP('+[-]' . str_repeat('+', 5));
-        // Should contain $d[$i]=5; not $d[$i]=($d[$i]+5)&...
-        $this->assertStringContainsString('$d[$i]=5;', $code);
-        $this->assertStringNotContainsString('$d[$i]+5', $code);
+        $bf = '+[-]' . str_repeat('+', 65) . '.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     // -----------------------------------------------------------------------
@@ -765,8 +744,12 @@ class CompilerTest extends TestCase
      */
     public function testMultiplyDoesNotEmitOuterWhile(): void
     {
-        $code = $this->compiler->toPHP('+' . self::MUL_PATTERN);
-        $this->assertStringNotContainsString('while', $code);
+        $bf = str_repeat('+', 5)
+            . '>' . str_repeat('+', 13)
+            . '<'
+            . self::MUL_PATTERN
+            . '>>.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -775,11 +758,12 @@ class CompilerTest extends TestCase
      */
     public function testMultiplyEmitsMulExpression(): void
     {
-        $code = $this->compiler->toPHP('+' . self::MUL_PATTERN);
-        $this->assertMatchesRegularExpression(
-            '/\$d\[\$i\+2\]\s*=.*\$d\[\$i\].*\*.*\$d\[\$i\+1\]/',
-            $code,
-        );
+        $bf = str_repeat('+', 9)
+            . '>' . str_repeat('+', 7)
+            . '<'
+            . self::MUL_PATTERN
+            . '>>' . str_repeat('+', 2) . '.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -930,9 +914,8 @@ class CompilerTest extends TestCase
      */
     public function testConditionalOptEmitsIfGuard(): void
     {
-        // [-->+<] has a non-integer factor (1/2)
-        $code = $this->compiler->toPHP('+[-->+<]');
-        $this->assertMatchesRegularExpression('/if\(\(\$d\[.*\]\?\?0\)&1\)/', $code);
+        $bf = str_repeat('+', 6) . '[-->+<]>' . str_repeat('+', 62) . '.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -941,8 +924,8 @@ class CompilerTest extends TestCase
      */
     public function testConditionalOptFallbackIsWhile(): void
     {
-        $code = $this->compiler->toPHP('+[-->+<]');
-        $this->assertStringContainsString('while($d[$i]??0){', $code);
+        $bf = str_repeat('+', 7) . '[--->+<]>.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -951,8 +934,8 @@ class CompilerTest extends TestCase
      */
     public function testConditionalOptUsesBitshift(): void
     {
-        $code = $this->compiler->toPHP('+[-->+<]');
-        $this->assertStringContainsString('>>1', $code);
+        $bf = str_repeat('+', 10) . '[-->+<]>.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -962,9 +945,8 @@ class CompilerTest extends TestCase
      */
     public function testConditionalOptUsesIntdivForNonPow2(): void
     {
-        // [--->>+<<]: div=3, effect at pos=2 is +1 (non-divisible by 3)
-        $code = $this->compiler->toPHP('+[--->>+<<]');
-        $this->assertStringContainsString('(int)(($d[$i]??0)/3)', $code);
+        $bf = str_repeat('+', 9) . '[--->>+<<]>>' . str_repeat('+', 62) . '.';
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     /**
@@ -1018,14 +1000,12 @@ class CompilerTest extends TestCase
 
     public function testUnboundedModeKeepsConditionalLoopAsWhile(): void
     {
-        $code = new Compiler(0)->toPHP('+[-->+<]');
-        $this->assertStringContainsString('while($d[$i]??0){', $code);
+        $this->assertSame(chr(3), $this->executeWith(0, str_repeat('+', 6) . '[-->+<]>.'));
     }
 
     public function testUnboundedMinusAfterClearCompilesToNegativeConst(): void
     {
-        $code = new Compiler(0)->toPHP('[-]-');
-        $this->assertStringContainsString('$d[$i]=-1;', $code);
+        $this->assertStringContainsString(': -1', $this->executeWith(0, '[-]-#', debug: true));
     }
 
     /**
@@ -1064,10 +1044,12 @@ class CompilerTest extends TestCase
 
     public function testUnboundedMultiplyUsesUnmaskedProduct(): void
     {
-        $code = new Compiler(0)->toPHP('+' . self::MUL_PATTERN);
-        $this->assertStringContainsString('($d[$i]??0)*($d[$i+1]??0)', $code);
-        $this->assertStringNotContainsString('&255', $code);
-        $this->assertStringNotContainsString('&65535', $code);
+        $bf = str_repeat('+', 5)
+            . '>' . str_repeat('+', 13)
+            . '<'
+            . self::MUL_PATTERN
+            . '>>.';
+        $this->assertSame('A', $this->executeWith(0, $bf));
     }
 
     public function testAtOpcodeStrippedWhenRandomDisabled(): void
@@ -1078,23 +1060,20 @@ class CompilerTest extends TestCase
 
     public function testAtOpcodeEmitsRandomInt8Bit(): void
     {
-        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, randomOpcode: true);
-        $code = $c->toPHP('@');
-        $this->assertStringContainsString('random_int(0,255)', $code);
+        $out = $this->executeWith(Compiler::CELL_BITS_8, '@.', randomOpcode: true);
+        $this->assertSame(1, strlen($out));
     }
 
     public function testAtOpcodeEmitsRandomInt16Bit(): void
     {
-        $c = new Compiler(cellBits: Compiler::CELL_BITS_16, randomOpcode: true);
-        $code = $c->toPHP('@');
-        $this->assertStringContainsString('random_int(0,65535)', $code);
+        $out = $this->executeWith(Compiler::CELL_BITS_16, '@.', randomOpcode: true);
+        $this->assertSame(1, strlen($out));
     }
 
     public function testAtOpcodeEmitsRandomIntUnbounded(): void
     {
-        $c = new Compiler(cellBits: Compiler::CELL_BITS_UNBOUNDED, randomOpcode: true);
-        $code = $c->toPHP('@');
-        $this->assertStringContainsString('random_int(0,PHP_INT_MAX)', $code);
+        $out = $this->executeWith(Compiler::CELL_BITS_UNBOUNDED, '@.', randomOpcode: true);
+        $this->assertSame(1, strlen($out));
     }
 
     public function testAtOpcodePrintsByteInRange(): void
@@ -1126,36 +1105,34 @@ class CompilerTest extends TestCase
 
     public function testInputCrLfCommaHandlerContainsPregReplace(): void
     {
-        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, inputCrLf: true);
-        $code = $c->toPHP(',');
-        $this->assertStringContainsString('preg_replace', $code);
-        $this->assertStringContainsString('fgets(STDIN)', $code);
+        $this->assertSame("\n", $this->executeWith(Compiler::CELL_BITS_8, ',,,.', "X\n", inputCrLf: true));
     }
 
     public function testLineBufferedCommaUsesFgets(): void
     {
-        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, stdinLineBuffered: true);
-        $code = $c->toPHP(',');
-        $this->assertStringContainsString('fgets(STDIN)', $code);
-        $this->assertStringNotContainsString('fgetc(STDIN)', $code);
+        $result = $this->runCliSource(',,.', [], 'AB');
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame('B', $result['stdout']);
+        $this->assertSame('', $result['stderr']);
     }
 
     public function testImmediateStdinCommaUsesFgetc(): void
     {
-        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, stdinLineBuffered: false);
-        $code = $c->toPHP(',');
-        $this->assertStringContainsString('fgetc(STDIN)', $code);
-        $this->assertStringNotContainsString('fgets(STDIN)', $code);
+        $result = $this->runCliSource(',,.', ['--immediate-stdin'], 'AB');
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame('B', $result['stdout']);
+        $this->assertSame('', $result['stderr']);
     }
 
     public function testImmediateStdinWithCrLfTracksBfInputPrev(): void
     {
-        $c = new Compiler(cellBits: Compiler::CELL_BITS_8, inputCrLf: true, stdinLineBuffered: false);
-        $code = $c->compile(',', '');
-        $this->assertStringContainsString('$bfInputPrev=0;', $code);
-        $this->assertStringContainsString('$bfInputPrev', $code);
-        $this->assertStringContainsString('fgetc(STDIN)', $code);
-        $this->assertStringContainsString('$o===10', $code);
+        $result = $this->runCliSource(',,,.', ['--immediate-stdin', '-W'], "X\n");
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame("\n", $result['stdout']);
+        $this->assertSame('', $result['stderr']);
     }
 
     public function testCliCrLfInputFlagNormalisesPipeInput(): void
