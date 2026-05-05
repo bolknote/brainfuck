@@ -86,7 +86,7 @@ Some programs were written for specific input formats and will hang or exhaust m
 
 | Program | Expected terminator | How to run |
 |---|---|---|
-| `hello/hello_you.bf` | `\r` (CR, ASCII 13) | `printf "Alice\r" \| php run.php ...` |
+| `hello/hello_you.bf` | `\r` (CR, ASCII 13) | `printf "Alice\n" \| php run.php -W ...` |
 | `text/sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| php run.php ...` |
 | `text/bertram_sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| php run.php ...` |
 
