@@ -304,9 +304,9 @@ class CompilerTest extends TestCase
         $this->assertSame($expected, $this->execute($bf, $input));
     }
 
-    private function executeWith(int $cellBits, string $bf, string $input = '', bool $debug = false): string
+    private function executeWith(int $cellBits, string $bf, string $input = '', bool $debug = false, bool $randomOpcode = false): string
     {
-        $compiler = new Compiler($cellBits, debug: $debug);
+        $compiler = new Compiler($cellBits, false, $debug, $randomOpcode);
         $level = ob_get_level();
         ob_start();
 
@@ -1124,5 +1124,42 @@ class CompilerTest extends TestCase
     public function testConstantSetOptReturnsLoopWhenNoConstants(): void
     {
         $this->assertSame('LMMMpmR', self::invokeNonPublic($this->compiler, 'constantSetOpt', ['MMMpm', 5]));
+    }
+
+    public function testAtOpcodeStrippedWhenRandomDisabled(): void
+    {
+        // `@` is not standard BF — without randomOpcode it is removed like a comment.
+        $this->assertSame($this->execute('+.'), $this->execute('+@.'));
+    }
+
+    public function testAtOpcodeEmitsRandomInt8Bit(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_8, false, false, true);
+        $code = $c->toPHP('@');
+        $this->assertStringContainsString('random_int(0,255)', $code);
+    }
+
+    public function testAtOpcodeEmitsRandomInt16Bit(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_16, false, false, true);
+        $code = $c->toPHP('@');
+        $this->assertStringContainsString('random_int(0,65535)', $code);
+    }
+
+    public function testAtOpcodeEmitsRandomIntUnbounded(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_UNBOUNDED, false, false, true);
+        $code = $c->toPHP('@');
+        $this->assertStringContainsString('random_int(0,PHP_INT_MAX)', $code);
+    }
+
+    public function testAtOpcodePrintsByteInRange(): void
+    {
+        for ($i = 0; $i < 64; ++$i) {
+            $out = $this->executeWith(8, '@.', '', false, true);
+            $this->assertSame(1, strlen($out));
+            $this->assertGreaterThanOrEqual(0, ord($out));
+            $this->assertLessThanOrEqual(255, ord($out));
+        }
     }
 }

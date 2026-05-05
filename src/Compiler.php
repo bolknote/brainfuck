@@ -31,13 +31,17 @@ class Compiler
      * @param bool $brainfork If true, opcode `Y` is recognised ([Brainfork](https://esolangs.org/wiki/Brainfork):
      *                        fork via `pcntl_fork()`). If false, `Y` is stripped like any non-BF character
      *                        (pure Brainfuck).
-     * @param bool $debug     If true, opcode `#` emits a debug dump (`$i: $d[$i]`). If false (default),
-     *                        `#` is treated as an ordinary comment character and ignored.
+     * @param bool $debug        If true, opcode `#` emits a debug dump (`$i: $d[$i]`). If false (default),
+     *                           `#` is treated as an ordinary comment character and ignored.
+     * @param bool $randomOpcode If true, opcode `@` assigns `random_int(0, N)` to the current cell,
+     *                           where N is `255` (8-bit), `65535` (16-bit), or `PHP_INT_MAX` (unbounded).
+     *                           If false (default), `@` is stripped like a comment.
      */
     public function __construct(
         int $cellBits = self::DEFAULT_CELL_BITS,
         private readonly bool $brainfork = false,
         private readonly bool $debug = false,
+        private readonly bool $randomOpcode = false,
     ) {
         $this->cellMask = match ($cellBits) {
             self::CELL_BITS_8         => self::MASK_BYTE,
@@ -100,9 +104,10 @@ class Compiler
      */
     protected function prepare(string $str): string
     {
-        $forkChars  = $this->brainfork ? 'Y' : '';
-        $debugChars = $this->debug ? '#' : '';
-        $str        = preg_replace("/[^\\-+\\[\\]><,.{$debugChars}{$forkChars}]+/", '', $str) ?? '';
+        $forkChars   = $this->brainfork ? 'Y' : '';
+        $debugChars  = $this->debug ? '#' : '';
+        $randomChars = $this->randomOpcode ? '@' : '';
+        $str         = preg_replace("/[^\\-+\\[\\]><,.{$debugChars}{$forkChars}{$randomChars}]+/", '', $str) ?? '';
 
         $trans = [
             '[<]' => 'l',
@@ -1071,6 +1076,14 @@ class Compiler
         }
         if ($this->brainfork) {
             $map['Y'] = '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;';
+        }
+        if ($this->randomOpcode) {
+            $maxRand = match ($this->cellMask) {
+                self::MASK_BYTE => '255',
+                self::MASK_WORD => '65535',
+                default => 'PHP_INT_MAX',
+            };
+            $map['@'] = '$d[$i]=random_int(0,' . $maxRand . ');';
         }
 
         $str = strtr($str, $map);

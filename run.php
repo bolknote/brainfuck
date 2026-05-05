@@ -10,10 +10,11 @@ require __DIR__ . '/vendor/autoload.php';
 
 use BolkNote\Brainfuck\Compiler;
 
-$cellBits  = Compiler::DEFAULT_CELL_BITS;
-$brainfork = false;
-$debug     = false;
-$args      = [];
+$cellBits     = Compiler::DEFAULT_CELL_BITS;
+$brainfork    = false;
+$debug        = false;
+$randomOpcode = false;
+$args         = [];
 $rawArgv   = $_SERVER['argv'] ?? null;
 $cliArgv   = is_array($rawArgv) ? $rawArgv : [];
 foreach (array_slice($cliArgv, 1) as $arg) {
@@ -26,13 +27,15 @@ foreach (array_slice($cliArgv, 1) as $arg) {
         $brainfork = true;
     } elseif ($arg === '-d' || $arg === '--debug') {
         $debug = true;
+    } elseif ($arg === '--random' || $arg === '-@') {
+        $randomOpcode = true;
     } else {
         $args[] = $arg;
     }
 }
 
 if ($args === [] || $args[0] === '') {
-    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] [-d|--debug] <file.bf>\n");
+    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] <file.bf>\n");
     exit(1);
 }
 
@@ -43,7 +46,7 @@ if ($source === false) {
     exit(1);
 }
 
-$compiler = new Compiler($cellBits, $brainfork, $debug);
+$compiler = new Compiler($cellBits, $brainfork, $debug, $randomOpcode);
 $code = $compiler->compile($source);
 
 eval($code);
