@@ -36,12 +36,16 @@ class Compiler
      * @param bool $randomOpcode If true, opcode `@` assigns `random_int(0, N)` to the current cell,
      *                           where N is `255` (8-bit), `65535` (16-bit), or `PHP_INT_MAX` (unbounded).
      *                           If false (default), `@` is stripped like a comment.
+     * @param bool $inputCrLf    If true, every LF (`\n`) not preceded by CR (`\r`) is rewritten to CRLF
+     *                           (`\r\n`) in stdin and in compile-time input — for BF programs that expect
+     *                           Windows-style line endings.
      */
     public function __construct(
         int $cellBits = self::DEFAULT_CELL_BITS,
         private readonly bool $brainfork = false,
         private readonly bool $debug = false,
         private readonly bool $randomOpcode = false,
+        private readonly bool $inputCrLf = false,
     ) {
         $this->cellMask = match ($cellBits) {
             self::CELL_BITS_8         => self::MASK_BYTE,
@@ -74,6 +78,9 @@ class Compiler
 
         $codes = [];
         if ($input !== '') {
+            if ($this->inputCrLf) {
+                $input = self::normalizeInputCrLf($input);
+            }
             $unpacked = unpack('c*', $input . "\0");
             if (is_array($unpacked)) {
                 $codes = array_map(
@@ -88,6 +95,14 @@ class Compiler
         }
 
         return '$in=[' . implode(',', $codes) . '];' . $str;
+    }
+
+    /**
+     * Insert CR before each LF that is not already part of CRLF (Unix → Windows text mode).
+     */
+    private static function normalizeInputCrLf(string $input): string
+    {
+        return preg_replace('/(?<!\r)\n/', "\r\n", $input) ?? $input;
     }
 
     /**
@@ -1062,11 +1077,18 @@ class Compiler
 
         $readInput = '(array_shift($in)??0)&' . $this->cellMask;
 
+        $stdinToIn = 'if(!$in){$s=fgets(STDIN)??"";';
+        if ($this->inputCrLf) {
+            // Emit `"\\r\\n"` so evaluated PHP gets a real CRLF replacement string.
+            $stdinToIn .= '$s=preg_replace(\'/(?<!\r)\n/\',' . "\"\\r\\n\"" . ',$s)??$s;';
+        }
+        $stdinToIn .= '$in=array_values(unpack("c*",$s));$in[]=0;};$d[$i]=' . $readInput . ';';
+
         $map = [
             'E' => 'echo chr(($d[$i]??0)&' . self::MASK_BYTE . ');',
             'l' => 'for(;$d[$i]??0;--$i);',
             'r' => 'for(;$d[$i]??0;++$i);',
-            ',' => 'if(!$in){$in=array_values(unpack("c*",fgets(STDIN)??""));$in[]=0;};$d[$i]=' . $readInput . ';',
+            ',' => $stdinToIn,
             'L' => 'while($d[$i]??0){',
             'W' => 'while($d[$i]??0){', // raw while: no loop optimisation attempted
             'R' => '}',

@@ -304,9 +304,9 @@ class CompilerTest extends TestCase
         $this->assertSame($expected, $this->execute($bf, $input));
     }
 
-    private function executeWith(int $cellBits, string $bf, string $input = '', bool $debug = false, bool $randomOpcode = false): string
+    private function executeWith(int $cellBits, string $bf, string $input = '', bool $debug = false, bool $randomOpcode = false, bool $inputCrLf = false): string
     {
-        $compiler = new Compiler($cellBits, false, $debug, $randomOpcode);
+        $compiler = new Compiler($cellBits, false, $debug, $randomOpcode, $inputCrLf);
         $level = ob_get_level();
         ob_start();
 
@@ -1161,5 +1161,35 @@ class CompilerTest extends TestCase
             $this->assertGreaterThanOrEqual(0, ord($out));
             $this->assertLessThanOrEqual(255, ord($out));
         }
+    }
+
+    public function testInputCrLfInsertsCrBeforeLoneLfInPrefilledBuffer(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
+        $code = $c->compile('+', "X\n");
+        // X=88, lone \n → \r\n → 88, 13, 10; unpack adds trailing 0 from "\0"
+        $this->assertStringContainsString('$in=[88,13,10,0]', $code);
+    }
+
+    public function testInputCrLfLeavesExistingCrLfUnchanged(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
+        $code = $c->compile('+', "X\r\n");
+        $this->assertStringContainsString('$in=[88,13,10,0]', $code);
+    }
+
+    public function testInputCrLfDisabledLeavesUnixLf(): void
+    {
+        $c = new Compiler();
+        $code = $c->compile('+', "X\n");
+        $this->assertStringContainsString('$in=[88,10,0]', $code);
+    }
+
+    public function testInputCrLfCommaHandlerContainsPregReplace(): void
+    {
+        $c = new Compiler(Compiler::CELL_BITS_8, false, false, false, true);
+        $code = $c->toPHP(',');
+        $this->assertStringContainsString('preg_replace', $code);
+        $this->assertStringContainsString('fgets(STDIN)', $code);
     }
 }

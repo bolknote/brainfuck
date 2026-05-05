@@ -14,6 +14,7 @@ $cellBits     = Compiler::DEFAULT_CELL_BITS;
 $brainfork    = false;
 $debug        = false;
 $randomOpcode = false;
+$inputCrLf    = false;
 $args         = [];
 $rawArgv   = $_SERVER['argv'] ?? null;
 $cliArgv   = is_array($rawArgv) ? $rawArgv : [];
@@ -29,13 +30,15 @@ foreach (array_slice($cliArgv, 1) as $arg) {
         $debug = true;
     } elseif ($arg === '--random' || $arg === '-@') {
         $randomOpcode = true;
+    } elseif ($arg === '--crlf-input' || $arg === '-W') {
+        $inputCrLf = true;
     } else {
         $args[] = $arg;
     }
 }
 
 if ($args === [] || $args[0] === '') {
-    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] <file.bf>\n");
+    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] [--crlf-input|-W] <file.bf>\n");
     exit(1);
 }
 
@@ -46,7 +49,7 @@ if ($source === false) {
     exit(1);
 }
 
-$compiler = new Compiler($cellBits, $brainfork, $debug, $randomOpcode);
+$compiler = new Compiler($cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf);
 $code = $compiler->compile($source);
 
 eval($code);
