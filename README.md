@@ -110,6 +110,9 @@ Requires the PHP **pcntl** extension when compiling or running programs that use
 
 ## Optimisations
 
+See [`AOT.md`](AOT.md) for a detailed explanation of the AOT pipeline,
+bytecode-like IR, and pattern-based optimisations.
+
 The compiler applies several passes before generating PHP:
 
 1. **Dead loop elimination** — a loop at the very start of the program is removed
