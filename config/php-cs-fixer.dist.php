@@ -11,6 +11,7 @@ if (!is_dir($cacheDir)) {
 $finder = PhpCsFixer\Finder::create()
     ->in($root)
     ->exclude('vendor')
+    ->exclude('var/cache')
     ->name('*.php');
 
 return (new PhpCsFixer\Config())
