@@ -121,10 +121,10 @@ src/
 tests/
   CompilerTest.php
 samples/
-  programs/       — classic BF programs grouped by purpose
-  quines/         — BF quine collection
-  collections/    — preserved external sample collections
-  docs/           — sample-related notes and links
+  programs/       — curated BF programs grouped by category (hello, math, demos, etc.)
+  quines/         — dedicated quine collection
+  collections/    — archival external collections (with their own readmes)
+  README.md       — detailed guide to all samples, usage, cell sizes, and future plans
 run.php           — CLI entry point
 ```
 
@@ -132,4 +132,4 @@ run.php           — CLI entry point
 
 This project (compiler source, tests, tooling, and documentation outside third-party trees) is licensed under the [MIT License](LICENSE).
 
-The **`samples/`** directory contains Brainfuck programs and collections gathered from various authors and websites for testing and demonstration. Those files are **not** necessarily covered by this project’s MIT license: rights remain with their respective authors, and license terms may differ. Where a subfolder includes its own `readme`, attribution, or license notes, those apply to the files in that tree; treat `samples/` as bundled third-party material unless stated otherwise.
+The **`samples/`** directory (see [`samples/README.md`](samples/README.md) for details) contains Brainfuck programs and collections gathered from various authors and websites for testing and demonstration. Those files are **not** necessarily covered by this project’s MIT license: rights remain with their respective authors, and license terms may differ. Where a subfolder includes its own `readme`, attribution, or license notes, those apply to the files in that tree; treat `samples/` as bundled third-party material unless stated otherwise.
