@@ -59,11 +59,16 @@ class CompilerTest extends TestCase
 
         while ($ip < $len) {
             switch ($code[$ip]) {
-                case '>': ++$ptr; break;
-                case '<': --$ptr; break;
-                case '+': $tape[$ptr] = ($tape[$ptr] + 1) & 255; break;
-                case '-': $tape[$ptr] = ($tape[$ptr] - 1) & 255; break;
-                case '.': $out .= chr($tape[$ptr]); break;
+                case '>': ++$ptr;
+                    break;
+                case '<': --$ptr;
+                    break;
+                case '+': $tape[$ptr] = ($tape[$ptr] + 1) & 255;
+                    break;
+                case '-': $tape[$ptr] = ($tape[$ptr] - 1) & 255;
+                    break;
+                case '.': $out .= chr($tape[$ptr]);
+                    break;
                 case ',':
                     $tape[$ptr] = $input !== '' ? ord($input[0]) & 255 : 0;
                     $input = substr($input, 1);
@@ -73,8 +78,11 @@ class CompilerTest extends TestCase
                         $depth = 1;
                         while ($depth > 0) {
                             $c = $code[++$ip];
-                            if ($c === '[') ++$depth;
-                            elseif ($c === ']') --$depth;
+                            if ($c === '[') {
+                                ++$depth;
+                            } elseif ($c === ']') {
+                                --$depth;
+                            }
                         }
                     }
                     break;
@@ -83,8 +91,11 @@ class CompilerTest extends TestCase
                         $depth = 1;
                         while ($depth > 0) {
                             $c = $code[--$ip];
-                            if ($c === ']') ++$depth;
-                            elseif ($c === '[') --$depth;
+                            if ($c === ']') {
+                                ++$depth;
+                            } elseif ($c === '[') {
+                                --$depth;
+                            }
                         }
                     }
                     break;
