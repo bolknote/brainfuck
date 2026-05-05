@@ -40,9 +40,27 @@ Compilation is split into several stages:
    | `[` | `L` | loop begin |
    | `]` | `R` | loop end |
    | `.` | `E` | output |
+   | `,` | `,` | input |
    | `[-]`, `[+]` | `c` | clear current cell |
    | `[>]` | `r` | scan right to zero |
    | `[<]` | `l` | scan left to zero |
+
+   A few symbols are internal-only:
+
+   | IR | Meaning |
+   |----|---------|
+   | `W` | raw `while` begin; used for fallback loops that must not be optimised again |
+   | `00`-`99` prefix | run-length count attached to `P`, `M`, `p`, or `m` |
+
+   Extension opcodes are preserved only when enabled: `#` for debug output and
+   `Y` for Brainfork.
+
+   `W` is deliberately separate from `L`. Both eventually generate
+   `while($d[$i]??0){`, but they have different roles inside the optimiser:
+   `L...R` means "this loop is still eligible for loop optimisation", while
+   `W...R` means "emit this loop literally". This is needed when an optimisation
+   creates a guarded fallback path. Re-running loop optimisation on that fallback
+   could turn it back into the fast path and break the guard's purpose.
 
 3. **Normalisation and local simplification**  
    Dead regions are removed, opposing operations are cancelled, and repeated
@@ -279,6 +297,11 @@ because of wrap-around. The compiler therefore emits a guard:
 
 - if the value is not suitable for the fast path, the original `while` runs;
 - if it is suitable, the fast calculation is used.
+
+The guarded fallback is encoded with `W...R` rather than `L...R`. This tells the
+remaining compiler passes to generate a raw `while` for the fallback body. If
+the fallback used `L`, the same loop optimiser could see it again and replace it
+with the fast form that the guard was supposed to avoid.
 
 For power-of-two divisors the compiler uses a bit shift:
 
