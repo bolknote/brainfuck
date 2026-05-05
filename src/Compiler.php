@@ -24,27 +24,24 @@ class Compiler
     private readonly int $cellMask;
 
     /**
-     * When true, opcode `Y` is recognised ([Brainfork](https://esolangs.org/wiki/Brainfork): fork via `pcntl_fork()`).
-     * When false, `Y` is stripped like any non-BF character (pure Brainfuck).
-     */
-    private readonly bool $brainfork;
-
-    /**
      * @param int  $cellBits  Cell width in bits.
      *                        CELL_BITS_8  — standard BF (default): cells wrap at 256.
      *                        CELL_BITS_16 — extended BF: cells wrap at 65536.
      *                        CELL_BITS_UNBOUNDED — cells wrap at PHP_INT_MAX.
-     * @param bool $brainfork If true, enable Brainfork `Y` fork opcode; if false, ignore `Y`.
+     * @param bool $brainfork If true, opcode `Y` is recognised ([Brainfork](https://esolangs.org/wiki/Brainfork):
+     *                        fork via `pcntl_fork()`). If false, `Y` is stripped like any non-BF character
+     *                        (pure Brainfuck).
      */
-    public function __construct(int $cellBits = self::DEFAULT_CELL_BITS, bool $brainfork = false)
-    {
-        $this->cellMask   = match ($cellBits) {
+    public function __construct(
+        int $cellBits = self::DEFAULT_CELL_BITS,
+        private readonly bool $brainfork = false,
+    ) {
+        $this->cellMask = match ($cellBits) {
             self::CELL_BITS_8         => self::MASK_BYTE,
             self::CELL_BITS_16        => self::MASK_WORD,
             self::CELL_BITS_UNBOUNDED => self::MASK_INT,
             default => throw new \InvalidArgumentException('cellBits must be 0, 8, or 16'),
         };
-        $this->brainfork = $brainfork;
     }
 
     /**
