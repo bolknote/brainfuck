@@ -55,37 +55,38 @@ function applyBfrunOption(
         return true;
     }
 
-    if ($arg === '-Y' || $arg === '--fork' || $arg === '--brainfork') {
-        $brainfork = true;
+    $option = match ($arg) {
+        '-Y', '--fork', '--brainfork' => 'brainfork',
+        '-d', '--debug' => 'debug',
+        '-@', '--random' => 'random',
+        '-W', '--crlf-input' => 'crlf-input',
+        '-I', '--immediate-stdin' => 'immediate-stdin',
+        default => null,
+    };
 
-        return true;
+    if ($option === null) {
+        return false;
     }
 
-    if ($arg === '-d' || $arg === '--debug') {
-        $debug = true;
-
-        return true;
+    switch ($option) {
+        case 'brainfork':
+            $brainfork = true;
+            break;
+        case 'debug':
+            $debug = true;
+            break;
+        case 'random':
+            $randomOpcode = true;
+            break;
+        case 'crlf-input':
+            $inputCrLf = true;
+            break;
+        case 'immediate-stdin':
+            $stdinLineBuffered = false;
+            break;
     }
 
-    if ($arg === '--random' || $arg === '-@') {
-        $randomOpcode = true;
-
-        return true;
-    }
-
-    if ($arg === '--crlf-input' || $arg === '-W') {
-        $inputCrLf = true;
-
-        return true;
-    }
-
-    if ($arg === '--immediate-stdin' || $arg === '-I') {
-        $stdinLineBuffered = false;
-
-        return true;
-    }
-
-    return false;
+    return true;
 }
 
 /**
@@ -134,6 +135,7 @@ foreach (array_slice($cliArgv, 1) as $arg) {
     if (!is_string($arg)) {
         continue;
     }
+    $arg = rtrim($arg, "\r");
     if (!applyBfrunOption($arg, $cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered)) {
         $args[] = $arg;
     }

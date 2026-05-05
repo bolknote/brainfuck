@@ -1197,6 +1197,15 @@ class CompilerTest extends TestCase
         $this->assertSame('', $result['stderr']);
     }
 
+    public function testCliAcceptsCarriageReturnAfterHashbangOption(): void
+    {
+        $result = $this->runCliSource(',,.', ["-W\r"], "X\n");
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame("\r", $result['stdout']);
+        $this->assertSame('', $result['stderr']);
+    }
+
     public function testCliHashbangLineIsIgnoredByDebugOpcode(): void
     {
         $result = $this->runCliSource("#!/usr/bin/env bfrun --debug\n");
