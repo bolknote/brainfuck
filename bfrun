@@ -106,17 +106,19 @@ function extractHashbangOptions(string &$source): array
         $source = substr($source, $lineEnd + 1);
     }
 
-    $optionsStart = strpos($hashbang, ' -');
-    if ($optionsStart === false) {
-        return [];
-    }
-
-    $parts = preg_split('/\s+/', trim(substr($hashbang, $optionsStart + 1)));
+    $parts = preg_split('/\s+/', trim(substr($hashbang, 2)));
     if (!is_array($parts)) {
         return [];
     }
 
-    return array_values(array_filter($parts, static fn (string $part): bool => $part !== ''));
+    $parts = array_values(array_filter($parts, static fn (string $part): bool => $part !== ''));
+    foreach ($parts as $index => $part) {
+        if (basename($part) === 'bfrun') {
+            return array_slice($parts, $index + 1);
+        }
+    }
+
+    return [];
 }
 
 $cellBits     = Compiler::DEFAULT_CELL_BITS;

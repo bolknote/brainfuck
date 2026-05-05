@@ -1188,6 +1188,15 @@ class CompilerTest extends TestCase
         $this->assertSame('', $result['stderr']);
     }
 
+    public function testCliHashbangSupportsEnvSplitStringInvocation(): void
+    {
+        $result = $this->runCliSource("#!/usr/bin/env -S bfrun --bits=16 --debug\n-#");
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertStringContainsString(': 65535', $result['stdout']);
+        $this->assertSame('', $result['stderr']);
+    }
+
     public function testCliHashbangLineIsIgnoredByDebugOpcode(): void
     {
         $result = $this->runCliSource("#!/usr/bin/env bfrun --debug\n");

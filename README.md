@@ -58,8 +58,8 @@ bfrun --immediate-stdin samples/programs/io/echo2.bf
 
 BF files may carry `bfrun` options in the first line. If the file starts with
 `#!`, `bfrun` treats that line as a hashbang, removes it before compiling the BF
-program, and parses supported options from the first ` -` (space + minus) to the
-end of the line.
+program, finds the `bfrun` command in that line, and parses supported options
+after it.
 
 ```brainfuck
 #!/usr/bin/env bfrun -Y
@@ -76,6 +76,13 @@ bfrun -Y program.bf
 ```
 
 This enables Brainfork, the random `@` opcode, and 16-bit cells.
+
+For systems where `/usr/bin/env` needs split-string hashbang arguments, `-S` is
+also fine because `bfrun` ignores interpreter tokens before the `bfrun` command:
+
+```brainfuck
+#!/usr/bin/env -S bfrun -Y -@ --bits=16
+```
 
 Supported hashbang options are the same runtime options accepted by the CLI:
 `--bits=8|16|0`, `-Y` / `--fork` / `--brainfork`, `-d` / `--debug`, `-@` /
