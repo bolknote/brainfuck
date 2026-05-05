@@ -40,6 +40,85 @@ function restoreImmediateStdinMode(?string $mode): void
     exec('stty ' . escapeshellarg($mode) . ' < /dev/tty 2>/dev/null');
 }
 
+function applyBfrunOption(
+    string $arg,
+    int &$cellBits,
+    bool &$brainfork,
+    bool &$debug,
+    bool &$randomOpcode,
+    bool &$inputCrLf,
+    bool &$stdinLineBuffered,
+): bool {
+    if (preg_match('/^--bits=(\d+)$/', $arg, $m)) {
+        $cellBits = (int) $m[1];
+
+        return true;
+    }
+
+    if ($arg === '-Y' || $arg === '--fork' || $arg === '--brainfork') {
+        $brainfork = true;
+
+        return true;
+    }
+
+    if ($arg === '-d' || $arg === '--debug') {
+        $debug = true;
+
+        return true;
+    }
+
+    if ($arg === '--random' || $arg === '-@') {
+        $randomOpcode = true;
+
+        return true;
+    }
+
+    if ($arg === '--crlf-input' || $arg === '-W') {
+        $inputCrLf = true;
+
+        return true;
+    }
+
+    if ($arg === '--immediate-stdin' || $arg === '-I') {
+        $stdinLineBuffered = false;
+
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * @return list<string>
+ */
+function extractHashbangOptions(string &$source): array
+{
+    if (!str_starts_with($source, '#!')) {
+        return [];
+    }
+
+    $lineEnd = strpos($source, "\n");
+    if ($lineEnd === false) {
+        $hashbang = $source;
+        $source = '';
+    } else {
+        $hashbang = substr($source, 0, $lineEnd);
+        $source = substr($source, $lineEnd + 1);
+    }
+
+    $optionsStart = strpos($hashbang, ' -');
+    if ($optionsStart === false) {
+        return [];
+    }
+
+    $parts = preg_split('/\s+/', trim(substr($hashbang, $optionsStart + 1)));
+    if (!is_array($parts)) {
+        return [];
+    }
+
+    return array_values(array_filter($parts, static fn (string $part): bool => $part !== ''));
+}
+
 $cellBits     = Compiler::DEFAULT_CELL_BITS;
 $brainfork    = false;
 $debug        = false;
@@ -53,19 +132,7 @@ foreach (array_slice($cliArgv, 1) as $arg) {
     if (!is_string($arg)) {
         continue;
     }
-    if (preg_match('/^--bits=(\d+)$/', $arg, $m)) {
-        $cellBits = (int) $m[1];
-    } elseif ($arg === '-Y' || $arg === '--fork' || $arg === '--brainfork') {
-        $brainfork = true;
-    } elseif ($arg === '-d' || $arg === '--debug') {
-        $debug = true;
-    } elseif ($arg === '--random' || $arg === '-@') {
-        $randomOpcode = true;
-    } elseif ($arg === '--crlf-input' || $arg === '-W') {
-        $inputCrLf = true;
-    } elseif ($arg === '--immediate-stdin' || $arg === '-I') {
-        $stdinLineBuffered = false;
-    } else {
+    if (!applyBfrunOption($arg, $cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered)) {
         $args[] = $arg;
     }
 }
@@ -80,6 +147,13 @@ $source = file_get_contents($sourcePath);
 if ($source === false) {
     fwrite(STDERR, "Error: cannot read file '{$sourcePath}'\n");
     exit(1);
+}
+
+foreach (extractHashbangOptions($source) as $arg) {
+    if (!applyBfrunOption($arg, $cellBits, $brainfork, $debug, $randomOpcode, $inputCrLf, $stdinLineBuffered)) {
+        fwrite(STDERR, "Error: unsupported hashbang option '{$arg}'\n");
+        exit(1);
+    }
 }
 
 $compiler = new Compiler(

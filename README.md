@@ -54,6 +54,21 @@ bfrun -W samples/programs/io/echo2.bf
 bfrun --immediate-stdin samples/programs/io/echo2.bf
 ```
 
+BF files may also carry `bfrun` options in a hashbang line. When the first line
+starts with `#!`, `bfrun` strips that line before compiling the program and
+parses supported options from the first ` -` onward:
+
+```brainfuck
+#!/usr/bin/env bfrun -Y
+```
+
+```brainfuck
+#!/usr/bin/bfrun -Y -@ --bits=16
+```
+
+Because the hashbang line is stripped, its leading `#` never triggers the debug
+opcode, even when `--debug` is enabled.
+
 ### API
 
 ```php

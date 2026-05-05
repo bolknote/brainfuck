@@ -1169,4 +1169,40 @@ class CompilerTest extends TestCase
         $this->assertSame(1, strlen($result['stdout']));
         $this->assertSame('', $result['stderr']);
     }
+
+    public function testCliHashbangOptionsConfigureCompiler(): void
+    {
+        $result = $this->runCliSource("#!/usr/bin/bfrun --bits=16 --debug\n-#");
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertStringContainsString(': 65535', $result['stdout']);
+        $this->assertSame('', $result['stderr']);
+    }
+
+    public function testCliHashbangCrLfInputFlagNormalisesPipeInput(): void
+    {
+        $result = $this->runCliSource("#!/usr/bin/env bfrun -W\n,,.", stdin: "X\n");
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame("\r", $result['stdout']);
+        $this->assertSame('', $result['stderr']);
+    }
+
+    public function testCliHashbangLineIsIgnoredByDebugOpcode(): void
+    {
+        $result = $this->runCliSource("#!/usr/bin/env bfrun --debug\n");
+
+        $this->assertSame(0, $result['exitCode']);
+        $this->assertSame('', $result['stdout']);
+        $this->assertSame('', $result['stderr']);
+    }
+
+    public function testCliRejectsUnsupportedHashbangOption(): void
+    {
+        $result = $this->runCliSource("#!/usr/bin/env bfrun --unknown\n+.");
+
+        $this->assertSame(1, $result['exitCode']);
+        $this->assertSame('', $result['stdout']);
+        $this->assertStringContainsString("unsupported hashbang option '--unknown'", $result['stderr']);
+    }
 }
