@@ -87,7 +87,6 @@ Some programs were written for specific input formats and will hang or exhaust m
 | Program | Expected terminator | How to run |
 |---|---|---|
 | `hello/hello_you.bf` | `\r` (CR, ASCII 13) | `printf "Alice\r" \| php run.php ...` |
-| `math/rpn.bf` | `\r` (CR, ASCII 13) | `printf "3 4 +\r" \| php run.php ...` |
 | `text/sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| php run.php ...` |
 | `text/bertram_sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| php run.php ...` |
 
@@ -110,7 +109,7 @@ Many programs in `collections/` document their requirements in accompanying file
 **From `programs/` (curated):**
 
 - **Hello World family**: `hello_world.bf`, `hello_short.bf`, `hello_bf2.bf`
-- **Math & Algorithms**: `pi16.bf`, `fibonacci.bf`, `prime.bf`, `e.bf`, `rpn.bf`, `power.bf`
+- **Math & Algorithms**: `pi16.bf`, `fibonacci.bf`, `prime.bf`, `e.bf`, `power.bf`; RPN calculator in `collections/fabianishere/rpn.bf`
 - **Visual/Demos**: `mandelbrot.bf`, `mandelbrot_opt.bf`, `mandelbrot_tiny.bf`, `game_of_life.bf`, `hanoi.bf`, `hanoi_opt.bf`, `triangle.bf`
 - **Quines**: Full collection in `programs/quines/` (410–505 byte classics, `self_portrait.bf`, Bertram series)
 - **Benchmarks & Cell tests**: `bench_1.bf`, `easy_opt.bf`, `cell_size_*.bf`

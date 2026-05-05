@@ -246,6 +246,8 @@ class CompilerTest extends TestCase
     {
         $helloDir = __DIR__ . '/../samples/programs/hello';
         $cristofaniDir = __DIR__ . '/../samples/collections/cristofani/programs';
+        $rpnFile = __DIR__ . '/../samples/collections/fabianishere/rpn.bf';
+        $rpn = self::readSample($rpnFile);
 
         return [
             'hello_world' => [
@@ -258,6 +260,13 @@ class CompilerTest extends TestCase
                 "A\n",
                 "N\n",
             ],
+            'rpn_add' => [$rpn, "3 4 +\n", '7'],
+            'rpn_sub' => [$rpn, "10 3 -\n", '7'],
+            'rpn_mul' => [$rpn, "6 7 *\n", '42'],
+            'rpn_div' => [$rpn, "8 2 /\n", '4'],
+            'rpn_chained' => [$rpn, "3 4 + 2 *\n", '14'],
+            'rpn_zero' => [$rpn, "0 5 +\n", '5'],
+            'rpn_multidigit' => [$rpn, "12 34 +\n", '46'],
         ];
     }
 
