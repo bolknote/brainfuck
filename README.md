@@ -54,20 +54,47 @@ bfrun -W samples/programs/io/echo2.bf
 bfrun --immediate-stdin samples/programs/io/echo2.bf
 ```
 
-BF files may also carry `bfrun` options in a hashbang line. When the first line
-starts with `#!`, `bfrun` strips that line before compiling the program and
-parses supported options from the first ` -` onward:
+#### Hashbang options
+
+BF files may carry `bfrun` options in the first line. If the file starts with
+`#!`, `bfrun` treats that line as a hashbang, removes it before compiling the BF
+program, and parses supported options from the first ` -` (space + minus) to the
+end of the line.
 
 ```brainfuck
 #!/usr/bin/env bfrun -Y
+```
+
+This enables Brainfork for the file, the same as running:
+
+```bash
+bfrun -Y program.bf
 ```
 
 ```brainfuck
 #!/usr/bin/bfrun -Y -@ --bits=16
 ```
 
-Because the hashbang line is stripped, its leading `#` never triggers the debug
-opcode, even when `--debug` is enabled.
+This enables Brainfork, the random `@` opcode, and 16-bit cells.
+
+Supported hashbang options are the same runtime options accepted by the CLI:
+`--bits=8|16|0`, `-Y` / `--fork` / `--brainfork`, `-d` / `--debug`, `-@` /
+`--random`, `-W` / `--crlf-input`, and `-I` / `--immediate-stdin`. Unknown
+hashbang options abort the run with an error.
+
+Command-line options are parsed first; hashbang options are then applied from
+the source file. Boolean options can only enable features, and `--bits=...` in
+the hashbang overrides the earlier cell-width selection.
+
+Because the hashbang line is stripped before compilation, its leading `#` never
+triggers the debug opcode, even when `--debug` is enabled.
+
+To run a BF file directly, make it executable and point the hashbang at `bfrun`:
+
+```bash
+chmod +x program.bf
+./program.bf
+```
 
 ### API
 
