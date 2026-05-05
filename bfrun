@@ -71,7 +71,7 @@ foreach (array_slice($cliArgv, 1) as $arg) {
 }
 
 if ($args === [] || $args[0] === '') {
-    fwrite(STDERR, "Usage: php run.php [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] [--crlf-input|-W] [--immediate-stdin|-I] <file.bf>\n");
+    fwrite(STDERR, "Usage: bfrun [--bits=8|16|0] [-Y|--fork] [-d|--debug] [--random|-@] [--crlf-input|-W] [--immediate-stdin|-I] <file.bf>\n");
     exit(1);
 }
 

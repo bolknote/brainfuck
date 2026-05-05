@@ -20,14 +20,14 @@ composer install
 ### CLI
 
 ```bash
-php run.php samples/programs/hello/hello_world.bf
+bfrun samples/programs/hello/hello_world.bf
 # Brainfork (`Y` opcode): same flags as many interpreters (e.g. weave.rb `-Y`)
-php run.php -Y fork_example.bf
+bfrun -Y fork_example.bf
 ```
 
 #### CLI options
 
-`run.php` supports the following CLI options:
+`bfrun` supports the following CLI options:
 
 - `--bits=8|16|0` — cell width mode (`8` default, `16` for 16-bit overflow semantics, `0` for very large values).
 - `-Y` — enable Brainfork opcode `Y`.
@@ -39,19 +39,19 @@ php run.php -Y fork_example.bf
 - `--random` — same as `-@`.
 - `-W` — normalise input for BF programs that expect Windows line endings: lone `\n` bytes become `\r\n`.
 - `--crlf-input` — same as `-W`.
-- `--immediate-stdin` / `-I` — read stdin one byte at a time for `,`; on Unix-like systems, when stdin is an interactive TTY, `run.php` temporarily switches it to raw mode and restores it on exit. On Windows and non-TTY stdin, this still reads byte-by-byte from PHP's stream, but does not change console input mode.
+- `--immediate-stdin` / `-I` — read stdin one byte at a time for `,`; on Unix-like systems, when stdin is an interactive TTY, `bfrun` temporarily switches it to raw mode and restores it on exit. On Windows and non-TTY stdin, this still reads byte-by-byte from PHP's stream, but does not change console input mode.
 
 ```bash
 # Long-form Brainfork aliases
-php run.php --fork fork_example.bf
-php run.php --brainfork fork_example.bf
+bfrun --fork fork_example.bf
+bfrun --brainfork fork_example.bf
 
 # Debug mode
-php run.php --debug samples/programs/tests/cell_size_8bit.bf
+bfrun --debug samples/programs/tests/cell_size_8bit.bf
 
 # Programs that expect CRLF input or byte-at-a-time interactive input
-php run.php -W samples/programs/io/echo2.bf
-php run.php --immediate-stdin samples/programs/io/echo2.bf
+bfrun -W samples/programs/io/echo2.bf
+bfrun --immediate-stdin samples/programs/io/echo2.bf
 ```
 
 ### API
@@ -158,7 +158,7 @@ samples/
   quines/         — dedicated quine collection
   collections/    — archival external collections (with their own readmes)
   README.md       — detailed guide to all samples, usage, cell sizes, and future plans
-run.php           — CLI entry point
+bfrun             — CLI entry point
 ```
 
 ## License

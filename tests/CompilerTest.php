@@ -312,9 +312,9 @@ class CompilerTest extends TestCase
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
-        $process = proc_open([PHP_BINARY, __DIR__ . '/../run.php', ...$args], $descriptors, $pipes, dirname(__DIR__));
+        $process = proc_open([__DIR__ . '/../bfrun', ...$args], $descriptors, $pipes, dirname(__DIR__));
         if (!is_resource($process)) {
-            throw new \RuntimeException('Failed to start run.php');
+            throw new \RuntimeException('Failed to start bfrun');
         }
 
         fwrite($pipes[0], $stdin);

@@ -10,6 +10,6 @@ return RectorConfig::configure()
     ->withPaths([
         $root . '/src',
         $root . '/tests',
-        $root . '/run.php',
+        $root . '/bfrun',
     ])
     ->withPhpSets(php84: true);

@@ -66,16 +66,16 @@ Files were deduplicated against the rest of `samples/` using exact SHA-256 hashe
 
 ```bash
 # Basic usage (8-bit cells, default)
-php run.php samples/programs/hello/hello_world.bf
+bfrun samples/programs/hello/hello_world.bf
 
 # 16-bit cells (for programs like pi16.bf that rely on 16-bit overflow)
-php run.php --bits=16 samples/programs/math/pi16.bf
+bfrun --bits=16 samples/programs/math/pi16.bf
 
 # With pre-filled input
-php run.php samples/programs/io/echo2.bf   # (provide input via stdin or modify)
+bfrun samples/programs/io/echo2.bf   # (provide input via stdin or modify)
 
 # Brainfork (if any Y opcodes)
-php run.php -Y some_fork_program.bf
+bfrun -Y some_fork_program.bf
 ```
 
 See `CompilerTest.php` for automated tests that exercise optimizations (loop elimination, RLE, multiply-move patterns, relative addressing, etc.).
@@ -86,9 +86,9 @@ Some programs were written for specific input formats and will hang or exhaust m
 
 | Program | Expected terminator | How to run |
 |---|---|---|
-| `hello/hello_you.bf` | `\r` (CR, ASCII 13) | `printf "Alice\n" \| php run.php -W ...` |
-| `text/sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| php run.php ...` |
-| `text/bertram_sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| php run.php ...` |
+| `hello/hello_you.bf` | `\r` (CR, ASCII 13) | `printf "Alice\n" \| bfrun -W ...` |
+| `text/sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| bfrun ...` |
+| `text/bertram_sort.bf` | byte `0xFF` (255) | `printf "hello\xff" \| bfrun ...` |
 
 **Why they hang:** these programs use input to detect end-of-line by checking for a specific sentinel value. When given a Unix `\n` or EOF=0, the sentinel is never found — the loop runs forever with `++$i` on every iteration, growing the sparse tape array until OOM.
 

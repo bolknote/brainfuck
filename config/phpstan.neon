@@ -3,4 +3,4 @@ parameters:
     paths:
         - ../src
         - ../tests
-        - ../run.php
+        - ../bfrun
