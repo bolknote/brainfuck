@@ -155,15 +155,43 @@ class CompilerTest extends TestCase
         $this->assertSame('2', $this->execute('+++++[->++++++++++<]>.'));
     }
 
+    public function testTransferLoopMatchesNaiveInterpreter(): void
+    {
+        $bf = '+[->+<]>.';
+
+        $this->assertSame($this->naive($bf), $this->execute($bf));
+    }
+
+    public function testCommonTransferLoopsMatchNaiveInterpreter(): void
+    {
+        foreach (['+[->>+<<]>>.', '>+[<+>-]<.', '+[->+>+<<]>.>.'] as $bf) {
+            $this->assertSame($this->naive($bf), $this->execute($bf));
+        }
+    }
+
     public function testSeekRight(): void
     {
         // Current cell is 0 → `[` never enters; no `>` steps execute.
         $this->assertSame('', $this->execute('[>]'));
     }
 
+    public function testSeekRightWithStride(): void
+    {
+        $bf = '+>>+<<[>>]' . str_repeat('+', 65) . '.';
+
+        $this->assertSame($this->naive($bf), $this->execute($bf));
+    }
+
     public function testSeekLeft(): void
     {
         $this->assertSame('', $this->execute('[<]'));
+    }
+
+    public function testSeekLeftWithStride(): void
+    {
+        $bf = '>>>>+<<+>>[<<]' . str_repeat('+', 65) . '.';
+
+        $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
     public function testLeadingLoopEliminated(): void
@@ -737,12 +765,7 @@ class CompilerTest extends TestCase
         $this->assertSame('A', $this->execute($bf));
     }
 
-    /**
-     * Generated code: the outer multiply loop must NOT remain as a `while`.
-     * Inner copy-loops are already flat-optimised; the optimiser must
-     * collapse the outer iteration too.
-     */
-    public function testMultiplyDoesNotEmitOuterWhile(): void
+    public function testMultiplyPatternMatchesNaiveInterpreter(): void
     {
         $bf = str_repeat('+', 5)
             . '>' . str_repeat('+', 13)
@@ -752,11 +775,7 @@ class CompilerTest extends TestCase
         $this->assertSame($this->naive($bf), $this->execute($bf));
     }
 
-    /**
-     * Generated code: the destination cell must be written using a
-     * multiplication of two source cells (e.g. `$d[$i]*$d[$i+1]`).
-     */
-    public function testMultiplyEmitsMulExpression(): void
+    public function testMultiplyPatternWithOffsetOutputMatchesNaiveInterpreter(): void
     {
         $bf = str_repeat('+', 9)
             . '>' . str_repeat('+', 7)
