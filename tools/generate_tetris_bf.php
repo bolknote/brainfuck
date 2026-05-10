@@ -740,10 +740,6 @@ renderGameOver($b);
 
 function findZopfliBinary(): ?string
 {
-    if (getenv('SKIP_ZOPFLI') === '1') {
-        return null;
-    }
-
     $out = [];
     $code = 0;
     exec('command -v zopfli 2>/dev/null', $out, $code);
@@ -758,9 +754,17 @@ function findZopfliBinary(): ?string
 /**
  * @return array{0: string, 1: bool} [gzip bytes, used zopfli]
  */
-function gzipProgram(string $program): array
+function gzipProgram(string $program, bool $useZopfli): array
 {
-    $zopfli = findZopfliBinary();
+    if ($useZopfli) {
+        $zopfli = findZopfliBinary();
+        if ($zopfli === null) {
+            fwrite(STDERR, "zopfli not found in PATH; using zlib gzip\n");
+        }
+    } else {
+        $zopfli = null;
+    }
+
     if ($zopfli !== null) {
         $tmp = tempnam(sys_get_temp_dir(), 'tetbf');
         if ($tmp === false) {
@@ -805,7 +809,8 @@ function gzipProgram(string $program): array
 }
 
 $target = __DIR__ . '/../samples/programs/demos/tetris.bf';
-[$payload, $usedZopfli] = gzipProgram($b->program());
+$useZopfli = in_array('--zopfli', $argv, true) || in_array('-Z', $argv, true);
+[$payload, $usedZopfli] = gzipProgram($b->program(), $useZopfli);
 file_put_contents($target, "#!/usr/bin/env -S ./bfrun -@ -I -z\n" . $payload);
 chmod($target, 0755);
 $via = $usedZopfli ? 'zopfli' : 'zlib';
