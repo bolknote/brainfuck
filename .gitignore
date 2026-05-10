@@ -1,8 +1,8 @@
 # Composer
 vendor/
 
-# Tooling caches (PHP-CS-Fixer / PHPUnit live under var/cache/ when using project config)
-var/cache/
+# Tooling caches (PHP-CS-Fixer / PHPUnit when using project config)
+cache/
 .php-cs-fixer.cache
 .phpunit.result.cache
 

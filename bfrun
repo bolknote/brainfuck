@@ -107,7 +107,7 @@ function compiledCachePath(
         $stdinLineBuffered ? '1' : '0',
     ]));
 
-    return __DIR__ . '/var/cache/bfrun/' . $cacheKey . '.php';
+    return __DIR__ . '/cache/bfrun/' . $cacheKey . '.php';
 }
 
 function writeCompiledCache(string $path, string $code): void

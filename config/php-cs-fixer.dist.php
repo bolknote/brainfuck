@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
-$cacheDir = $root . '/var/cache';
+$cacheDir = $root . '/cache';
 if (!is_dir($cacheDir)) {
     mkdir($cacheDir, 0755, true);
 }
@@ -11,7 +11,7 @@ if (!is_dir($cacheDir)) {
 $finder = PhpCsFixer\Finder::create()
     ->in($root)
     ->exclude('vendor')
-    ->exclude('var/cache')
+    ->exclude('cache')
     ->name('*.php');
 
 return (new PhpCsFixer\Config())
