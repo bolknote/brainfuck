@@ -565,6 +565,13 @@ class Compiler
             return 'L' . $str . 'R';
         }
 
+        if (str_contains($str, 'c')) {
+            $oneShot = $this->tryPointerChangingOneShotOpt($str);
+            if ($oneShot !== null) {
+                return $oneShot;
+            }
+        }
+
         // Pointer moves must balance: the body must leave the pointer at its
         // starting position, otherwise the loop condition cell changes each pass.
         $moves = ['m' => 0, 'p' => 0];
@@ -629,6 +636,56 @@ class Compiler
         $fastPath = $this->genFastPath($effects, $divider);
 
         return 'if(' . $guard . '){W' . $str . 'R}' . $fastPath;
+    }
+
+    /**
+     * Optimise pointer-changing one-shot loops such as `[>[-]]`.
+     *
+     * Brainfuck re-checks the loop condition at the pointer position left by
+     * the body. If that final cell is definitely cleared, the loop can run at
+     * most once even when the pointer does not return to the original cell.
+     */
+    private function tryPointerChangingOneShotOpt(string $str): ?string
+    {
+        $pos = 0;
+        /** @var array<int, true> $knownZero */
+        $knownZero = [];
+        $len = strlen($str);
+
+        for ($k = 0; $k < $len; $k++) {
+            if ((string) (int) $str[$k] === $str[$k]) {
+                $num = (int) substr($str, $k++, 2);
+                $op = $str[++$k] ?? '';
+            } else {
+                $num = 1;
+                $op = $str[$k];
+            }
+
+            if ($op === 'p') {
+                $pos += $num;
+                continue;
+            }
+            if ($op === 'm') {
+                $pos -= $num;
+                continue;
+            }
+            if ($op === 'c') {
+                $knownZero[$pos] = true;
+                continue;
+            }
+            if ($op === 'P' || $op === 'M') {
+                unset($knownZero[$pos]);
+                continue;
+            }
+
+            return null;
+        }
+
+        if (!isset($knownZero[$pos])) {
+            return null;
+        }
+
+        return 'if($d[$i]??0){' . $this->compileCode($str) . '}';
     }
 
     /**

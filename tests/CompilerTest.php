@@ -213,6 +213,12 @@ class CompilerTest extends TestCase
             'nested if with right-side move' => [
                 str_repeat('+', 5) . '>' . str_repeat('+', 60) . '<[>[->+<]<[-]]>>' . str_repeat('+', 5) . '.',
             ],
+            'pointer-changing one-shot [>[-]]' => [
+                '+>' . str_repeat('+', 7) . '<[>[-]]' . str_repeat('+', 65) . '.',
+            ],
+            'pointer-changing one-shot [>>[-]]' => [
+                '+>>' . str_repeat('+', 7) . '<<[>>[-]]' . str_repeat('+', 65) . '.',
+            ],
         ];
     }
 
@@ -226,6 +232,60 @@ class CompilerTest extends TestCase
     public function testSampleBackedIdiomsCompileWithoutGenericWhile(string $bf): void
     {
         $this->assertStringNotContainsString('while(', $this->compiler->toPHP($bf));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function pointerChangingOneShotProvider(): array
+    {
+        return [
+            'clear cell to the right and leave pointer there' => [
+                '+>' . str_repeat('+', 7) . '<[>[-]]' . str_repeat('+', 65) . '.',
+            ],
+            'clear cell two steps right and leave pointer there' => [
+                '+>>' . str_repeat('+', 7) . '<<[>>[-]]' . str_repeat('+', 65) . '.',
+            ],
+            'move value left then clear source' => [
+                '>' . str_repeat('+', 5) . '[<+>[-]]<' . str_repeat('+', 60) . '.',
+            ],
+            'decrement left cell once then clear source' => [
+                str_repeat('+', 66) . '>+[<->[-]]<.',
+            ],
+            'skip when original controller is zero' => [
+                '>' . str_repeat('+', 7) . '<[>[-]]>' . str_repeat('+', 58) . '.',
+            ],
+        ];
+    }
+
+    #[DataProvider('pointerChangingOneShotProvider')]
+    public function testPointerChangingOneShotMatchesNaiveInterpreter(string $bf): void
+    {
+        $this->assertSame($this->naive($bf), $this->execute($bf));
+    }
+
+    #[DataProvider('pointerChangingOneShotProvider')]
+    public function testPointerChangingOneShotCompilesWithoutGenericWhile(string $bf): void
+    {
+        $this->assertStringNotContainsString('while(', $this->compiler->toPHP($bf));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function unsafePointerChangingLoopProvider(): array
+    {
+        return [
+            'final pointer cell is not known zero after increment' => ['+[>[-]+]'],
+            'final pointer returns to uncleared controller' => ['+[>[-]<]'],
+            'no clear in pointer-changing loop' => ['+[>+]'],
+        ];
+    }
+
+    #[DataProvider('unsafePointerChangingLoopProvider')]
+    public function testUnsafePointerChangingLoopsStayGenericWhile(string $bf): void
+    {
+        $this->assertStringContainsString('while(', $this->compiler->toPHP($bf));
     }
 
     public function testSeekRight(): void
