@@ -188,7 +188,10 @@ The compiler applies several passes before generating PHP:
    to their net effect before encoding.
 4. **Loop body optimisation** — simple loops of the form `[->`*n*`+<]` (multiply-move)
    are replaced with direct cell arithmetic, eliminating the `while` entirely.
-5. **Relative addressing** — patterns like `>+++<` become a single
+5. **One-shot and clear/merge loop optimisation** — loops that clear the cell
+   later tested by `]` (including BFI-style `[>+>[-]<<-]` and pointer-changing
+   cases like `[>[-]]`) are emitted as direct conditional effects when safe.
+6. **Relative addressing** — patterns like `>+++<` become a single
    `$d[$i+1]+=3` without moving the pointer.
 
 ## Running tests

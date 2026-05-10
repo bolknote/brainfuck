@@ -340,7 +340,7 @@ This matters for programs that build arithmetic out of standard BF macros.
 
 ### Loop-With-Clear Optimisation
 
-Loops that contain `[-]` need separate analysis. The compiler recognises two
+Loops that contain `[-]` need separate analysis. The compiler recognises several
 useful groups.
 
 **One-shot loop**: if the loop body clears its controller cell, the loop can run
@@ -376,6 +376,59 @@ if($d[$i]??0){
 ```
 
 This replaces a potentially long loop with a single `if`.
+
+**Linear loop with clear side effects**: if the controller is decremented while
+other cells are cleared or assigned constants, the linear transfer and the
+conditional clear can be emitted directly.
+
+```brainfuck
+[>+>[-]<<-]
+```
+
+becomes code shaped like:
+
+```php
+if($d[$i]??0){
+    $d[$i+2]=0;
+}
+$d[$i+1]=(($d[$i+1]??0)+($d[$i]??0))&255;
+$d[$i]=0;
+```
+
+This captures BFI-style clear/merge idioms without matching generated PHP; the
+loop body is analysed in the BF/IR form before emission.
+
+**Pointer-changing one-shot loops**: BF checks `]` at the pointer position left
+by the loop body. If that final cell is definitely cleared, the loop can run at
+most once even if the pointer does not return to the original controller cell.
+
+```brainfuck
+[>[-]]
+```
+
+becomes code shaped like:
+
+```php
+if($d[$i]??0){
+    $d[++$i]=0;
+}
+```
+
+The optimiser only applies this when the final pointer cell is known to be zero;
+unsafe loops such as `[>[-]+]`, `[>[-]<]`, or `[>+]` remain ordinary `while`
+loops.
+
+**Nested one-shot conditionals**: Faase-style `if(a) ... endif(a)` macros can
+contain nested copy/move loops. When the top-level body clears the controller,
+the pointer movement is balanced, and all nested loops reduce to straight-line
+or conditional code, the outer loop becomes a single `if`.
+
+```brainfuck
+[>[->+<]<[-]]
+```
+
+The nested transfer is optimised first, then the surrounding one-shot loop is
+emitted as a conditional.
 
 ### Sparse Tape
 

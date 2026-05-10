@@ -78,8 +78,29 @@ final class Bf
     {
         $value = str_replace("\n", "\r\n", $value);
         $len = strlen($value);
+        if ($len === 0) {
+            return;
+        }
+
+        $previous = ord($value[0]);
+        $this->outByte($previous);
+
         for ($i = 0; $i < $len; $i++) {
-            $this->outByte(ord($value[$i]));
+            if ($i === 0) {
+                continue;
+            }
+
+            $current = ord($value[$i]);
+            $this->move(T::OUT);
+            $increase = ($current - $previous) & 0xFF;
+            $decrease = ($previous - $current) & 0xFF;
+            if ($increase <= $decrease) {
+                $this->raw(str_repeat('+', $increase));
+            } else {
+                $this->raw(str_repeat('-', $decrease));
+            }
+            $this->outCell(T::OUT);
+            $previous = $current;
         }
     }
 
@@ -717,11 +738,75 @@ $b->whileNonzero(T::RUN, static function () use ($b): void {
 });
 renderGameOver($b);
 
-$target = __DIR__ . '/../samples/programs/demos/tetris.bf';
-$payload = gzencode($b->program(), 9);
-if ($payload === false) {
-    throw new RuntimeException('Failed to gzip generated Tetris program');
+function findZopfliBinary(): ?string
+{
+    if (getenv('SKIP_ZOPFLI') === '1') {
+        return null;
+    }
+
+    $out = [];
+    $code = 0;
+    exec('command -v zopfli 2>/dev/null', $out, $code);
+    if ($code !== 0 || $out === []) {
+        return null;
+    }
+    $path = trim($out[0]);
+
+    return $path !== '' ? $path : null;
 }
+
+/**
+ * @return array{0: string, 1: bool} [gzip bytes, used zopfli]
+ */
+function gzipProgram(string $program): array
+{
+    $zopfli = findZopfliBinary();
+    if ($zopfli !== null) {
+        $tmp = tempnam(sys_get_temp_dir(), 'tetbf');
+        if ($tmp === false) {
+            throw new RuntimeException('tempnam failed');
+        }
+        try {
+            if (file_put_contents($tmp, $program) === false) {
+                throw new RuntimeException('Failed to write temp file for zopfli');
+            }
+            $iter = getenv('ZOPFLI_ITERATIONS');
+            $iterFlag = '';
+            if (
+                is_string($iter)
+                && $iter !== ''
+                && ctype_digit($iter)
+                && (int) $iter >= 1
+            ) {
+                $iterFlag = ' --i' . (int) $iter;
+            }
+
+            $cmd = escapeshellarg($zopfli) . $iterFlag . ' --gzip -c ' . escapeshellarg($tmp) . ' 2>/dev/null';
+            $payload = shell_exec($cmd);
+            if (
+                is_string($payload)
+                && strlen($payload) >= 2
+                && $payload[0] === "\x1f"
+                && $payload[1] === "\x8b"
+            ) {
+                return [$payload, true];
+            }
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
+    $payload = gzencode($program, 9);
+    if ($payload === false) {
+        throw new RuntimeException('Failed to gzip generated Tetris program');
+    }
+
+    return [$payload, false];
+}
+
+$target = __DIR__ . '/../samples/programs/demos/tetris.bf';
+[$payload, $usedZopfli] = gzipProgram($b->program());
 file_put_contents($target, "#!/usr/bin/env -S ./bfrun -@ -I -z\n" . $payload);
 chmod($target, 0755);
-fwrite(STDERR, "Generated {$target}\n");
+$via = $usedZopfli ? 'zopfli' : 'zlib';
+fwrite(STDERR, "Generated {$target} (gzip via {$via})\n");
