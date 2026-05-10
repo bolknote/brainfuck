@@ -68,7 +68,7 @@ class Compiler
      */
     public function compile(string $str, string $input = ''): string
     {
-        return $this->addHeader($this->compileTokenStream($this->prepare($str)), $input);
+        return $this->addHeader($this->compileCode($this->prepare($str)), $input);
     }
 
     /**
@@ -140,7 +140,7 @@ class Compiler
      */
     public function toPHP(string $str): string
     {
-        return $this->compileTokenStream($this->prepare($str));
+        return $this->compileCode($this->prepare($str));
     }
 
     /**
@@ -363,85 +363,6 @@ class Compiler
         return '';
     }
 
-    private function commaOp(): string
-    {
-        $readInput = '(array_shift($in)??0)&' . $this->cellMask;
-        $body = $this->buildCommaReloadBlock() . '$d[$i]=' . $readInput . ';';
-        if (!$this->stdinLineBuffered && $this->inputCrLf) {
-            $body .= '$bfInputPrev=($d[$i]??0)&' . $this->cellMask . ';';
-        }
-
-        return $body;
-    }
-
-    private function randomOp(): string
-    {
-        $maxRand = match ($this->cellMask) {
-            self::MASK_BYTE => '255',
-            self::MASK_WORD => '65535',
-            default => 'PHP_INT_MAX',
-        };
-
-        return '$d[$i]=random_int(0,' . $maxRand . ');';
-    }
-
-    private function compileTokenOp(string $op, int $count): string
-    {
-        return match ($op) {
-            'P', 'M', 'p', 'm' => $this->op($count, $op),
-            'c' => '$d[$i]=0;',
-            'l' => 'for(;$d[$i]??0;--$i);',
-            'r' => 'for(;$d[$i]??0;++$i);',
-            'E' => 'echo chr(($d[$i]??0)&' . self::MASK_BYTE . ');',
-            ',' => $this->commaOp(),
-            '#' => $this->debug ? 'echo "$i: ".($d[$i]??0)."\n";' : '',
-            'Y' => $this->brainfork ? '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;' : '',
-            '@' => $this->randomOpcode ? $this->randomOp() : '',
-            default => '',
-        };
-    }
-
-    private function compileTokenRange(string $str, int &$offset, bool $stopAtLoopEnd = false): string
-    {
-        $out = '';
-        $len = strlen($str);
-
-        while ($offset < $len) {
-            $count = 0;
-            $op = $str[$offset];
-            if ($op >= '0' && $op <= '9') {
-                $count = (int) substr($str, $offset, 2);
-                $offset += 2;
-                $op = $str[$offset] ?? '';
-            }
-            $offset++;
-
-            if ($op === 'R') {
-                if ($stopAtLoopEnd) {
-                    return $out;
-                }
-                $out .= '}';
-                continue;
-            }
-
-            if ($op === 'L') {
-                $out .= 'while($d[$i]??0){' . $this->compileTokenRange($str, $offset, true) . '}';
-                continue;
-            }
-
-            $out .= $this->compileTokenOp($op, $count);
-        }
-
-        return $out;
-    }
-
-    private function compileTokenStream(string $str): string
-    {
-        $offset = 0;
-
-        return $this->compileTokenRange($str, $offset);
-    }
-
     /**
      * Build a `$d[$i±offset]` reference string for a given relative offset.
      */
@@ -631,6 +552,11 @@ class Compiler
         // declines, fall back to the flat-body path which (re-)encodes the
         // outer loop as a `while`.
         if (str_contains($str, 'L')) {
+            $oneShot = $this->tryNestedOneShotOpt($str);
+            if ($oneShot !== null) {
+                return $oneShot;
+            }
+
             $optimised = $this->tryMulOpt($str);
             if ($optimised !== null) {
                 return $optimised;
@@ -703,6 +629,120 @@ class Compiler
         $fastPath = $this->genFastPath($effects, $divider);
 
         return 'if(' . $guard . '){W' . $str . 'R}' . $fastPath;
+    }
+
+    /**
+     * Optimise Faase-style `if(a) ... endif(a)` bodies that contain nested BF
+     * loops. The top-level body must unconditionally clear the controller cell
+     * and return the pointer to that cell, so the original `while` runs at most once.
+     */
+    private function tryNestedOneShotOpt(string $str): ?string
+    {
+        if (!$this->topLevelClearsControllerAndBalances($str)) {
+            return null;
+        }
+
+        $body = $this->compileCode($str);
+
+        // Embed only straight-line/if output. Raw loops, scans, I/O, and
+        // extension opcodes carry letters that later IR passes would still see.
+        if (preg_match('/[MPmplrcELWR,#Y@]/', $body) === 1) {
+            return null;
+        }
+
+        return 'if($d[$i]??0){' . $body . '}';
+    }
+
+    private function topLevelClearsControllerAndBalances(string $str): bool
+    {
+        $pos = 0;
+        $hasClearAtZero = false;
+        $len = strlen($str);
+
+        for ($k = 0; $k < $len; $k++) {
+            if ((string) (int) $str[$k] === $str[$k]) {
+                $num = (int) substr($str, $k++, 2);
+                $op = $str[++$k] ?? '';
+            } else {
+                $num = 1;
+                $op = $str[$k];
+            }
+
+            if ($op === 'L') {
+                $end = $this->findLoopEnd($str, $k);
+                if ($end === null || !$this->loopBodyHasBalancedPointer(substr($str, $k + 1, $end - $k - 1))) {
+                    return false;
+                }
+                $k = $end;
+                continue;
+            }
+
+            if ($op === 'p') {
+                $pos += $num;
+                continue;
+            }
+            if ($op === 'm') {
+                $pos -= $num;
+                continue;
+            }
+            if ($op === 'c' && $pos === 0) {
+                $hasClearAtZero = true;
+            }
+        }
+
+        return $hasClearAtZero && $pos === 0;
+    }
+
+    private function loopBodyHasBalancedPointer(string $str): bool
+    {
+        $pos = 0;
+        $len = strlen($str);
+
+        for ($k = 0; $k < $len; $k++) {
+            if ((string) (int) $str[$k] === $str[$k]) {
+                $num = (int) substr($str, $k++, 2);
+                $op = $str[++$k] ?? '';
+            } else {
+                $num = 1;
+                $op = $str[$k];
+            }
+
+            if ($op === 'L') {
+                $end = $this->findLoopEnd($str, $k);
+                if ($end === null || !$this->loopBodyHasBalancedPointer(substr($str, $k + 1, $end - $k - 1))) {
+                    return false;
+                }
+                $k = $end;
+                continue;
+            }
+
+            if ($op === 'p') {
+                $pos += $num;
+            } elseif ($op === 'm') {
+                $pos -= $num;
+            }
+        }
+
+        return $pos === 0;
+    }
+
+    private function findLoopEnd(string $str, int $start): ?int
+    {
+        $depth = 1;
+        $len = strlen($str);
+
+        for ($i = $start + 1; $i < $len; $i++) {
+            if ($str[$i] === 'L') {
+                ++$depth;
+            } elseif ($str[$i] === 'R') {
+                --$depth;
+                if ($depth === 0) {
+                    return $i;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -990,7 +1030,7 @@ class Compiler
         }
 
         if ($hasDecrAtZero) {
-            return $this->constantSetOpt($str, $len);
+            return $this->linearLoopWithClearOpt($str, $len);
         }
 
         return 'L' . $str . 'R';
@@ -1043,22 +1083,24 @@ class Compiler
     }
 
     /**
-     * Class B: M at pos=0 is the decrement controller and every non-zero
-     * position that is written was first cleared by `c` in the same iteration.
+     * Class C: source-decrement loop with clears away from the controller.
      *
-     * Each such destination ends up holding a constant value (the net sum of
-     * P/M ops since the last `c` at that position), independent of the source.
+     * This generalises constant-set loops and BFI's clear/merge idiom:
+     *   [>+>[-]<<-] => cell[1] += source; if source: cell[2]=0; source=0
      *
-     * Generates: if($d[$i]){ dest=const; …; $d[$i]=0; }
-     *
-     * Falls back to a while loop if any non-zero position is written without a
-     * preceding `c` (that would be a multiply-accumulate, not a constant-set).
+     * The loop body is still analysed as BF/IR. The returned string is emitted
+     * PHP for the compact operations, but no generated PHP is searched/replaced.
      */
-    private function constantSetOpt(string $str, int $len): string
+    private function linearLoopWithClearOpt(string $str, int $len): string
     {
-        $pos              = 0;
-        $cleared          = [];  // positions cleared by c in this iteration
-        $constants        = [];  // pos => net constant value
+        $pos = 0;
+        $divider = 0;
+        /** @var array<int, int> $effects */
+        $effects = [];
+        /** @var array<int, int> $constants */
+        $constants = [];
+        /** @var array<int, true> $cleared */
+        $cleared = [];
 
         for ($k = 0; $k < $len; $k++) {
             if ((string) (int) $str[$k] === $str[$k]) {
@@ -1077,41 +1119,54 @@ class Compiler
                 $pos -= $num;
                 continue;
             }
-            if ($op === 'M' && $pos === 0) {
-                continue;
-            } // source decrement, handled
 
-            // Any other op at pos=0 is not supported (e.g. P at pos=0 alongside M).
             if ($pos === 0) {
-                return 'L' . $str . 'R';
+                if ($op !== 'M') {
+                    return 'L' . $str . 'R';
+                }
+                $divider += $num;
+                continue;
             }
 
             if ($op === 'c') {
-                $cleared[$pos]   = true;
+                unset($effects[$pos]);
+                $cleared[$pos] = true;
                 $constants[$pos] = 0;
-            } elseif ($op === 'P' || $op === 'M') {
-                if (!isset($cleared[$pos])) {
-                    // Multiply-accumulate at a non-cleared position: not supported here.
-                    return 'L' . $str . 'R';
-                }
-                $constants[$pos] += $op === 'P' ? $num : -$num;
+                continue;
+            }
+
+            if ($op !== 'P' && $op !== 'M') {
+                return 'L' . $str . 'R';
+            }
+
+            $delta = $op === 'P' ? $num : -$num;
+            if (isset($cleared[$pos])) {
+                $constants[$pos] += $delta;
+            } else {
+                $effects[$pos] = ($effects[$pos] ?? 0) + $delta;
             }
         }
 
-        if ($constants === []) {
+        if ($divider !== 1 || ($effects === [] && $constants === [])) {
             return 'L' . $str . 'R';
         }
 
-        $out = '';
+        $out = $this->genStraightLine($effects, $divider);
+        if ($constants === []) {
+            return $out;
+        }
+
+        ksort($constants);
+        $constantOut = '';
         foreach ($constants as $constPos => $value) {
             if ($this->cellMask !== self::MASK_INT) {
                 $value &= $this->cellMask;
             }
-            $posStr = $constPos > 0 ? '+' . $constPos : (string) $constPos;
-            $out   .= '$d[$i' . $posStr . ']=' . $value . ';';
+            $constantOut .= $this->cellRef($constPos) . '=' . $value . ';';
         }
 
-        return 'if($d[$i]??0){' . $out . '$d[$i]=0;}';
+        // The clear/set side effects only happen when the original loop runs.
+        return 'if($d[$i]??0){' . $constantOut . '}' . $out;
     }
 
     /**

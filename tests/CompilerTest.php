@@ -169,6 +169,65 @@ class CompilerTest extends TestCase
         }
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function idiomOptimisationProgramProvider(): array
+    {
+        return [
+            'move right [>+<-]' => [
+                str_repeat('+', 5) . '[>+<-]>' . str_repeat('+', 60) . '.',
+            ],
+            'move left [<+>-]' => [
+                '>' . str_repeat('+', 5) . '[<+>-]<' . str_repeat('+', 60) . '.',
+            ],
+            'ADD [<+>-]<' => [
+                '>' . str_repeat('+', 5) . '[<+>-]<' . str_repeat('+', 60) . '.',
+            ],
+            'scatter [>+>+<<-]' => [
+                str_repeat('+', 5) . '[>+>+<<-]>' . str_repeat('+', 60) . '.',
+            ],
+            'restore [<<+>>-]' => [
+                '>>' . str_repeat('+', 5) . '[<<+>>-]<<' . str_repeat('+', 60) . '.',
+            ],
+            'DUP macro' => [
+                str_repeat('+', 5) . '[>+>+<<-]>>[<<+>>-]<<' . str_repeat('+', 60) . '.',
+            ],
+            'BFI clear/merge [>+>[-]<<-]' => [
+                str_repeat('+', 5) . '>>++++<<[>+>[-]<<-]>'
+                . str_repeat('+', 60) . '.>' . str_repeat('+', 65) . '.',
+            ],
+            'one-shot [>+<[-]]' => [
+                str_repeat('+', 5) . '[>+<[-]]>' . str_repeat('+', 60) . '.',
+            ],
+            'IF prefix >[-]<[>[-]+<-]>' => [
+                str_repeat('+', 5) . '>++++<' . '>[-]<[>[-]+<-]>' . str_repeat('+', 64) . '.',
+            ],
+            'SWAP macro' => [
+                '>' . str_repeat('+', 5) . '>' . str_repeat('+', 60)
+                . '<[>+<-]<[>+<-]>>[<<+>>-]<' . str_repeat('+', 5) . '.',
+            ],
+            'nested if with left-side move' => [
+                str_repeat('+', 60) . '>' . str_repeat('+', 5) . '[<[->>+<<]>[-]]>' . str_repeat('+', 5) . '.',
+            ],
+            'nested if with right-side move' => [
+                str_repeat('+', 5) . '>' . str_repeat('+', 60) . '<[>[->+<]<[-]]>>' . str_repeat('+', 5) . '.',
+            ],
+        ];
+    }
+
+    #[DataProvider('idiomOptimisationProgramProvider')]
+    public function testSampleBackedIdiomsMatchNaiveInterpreter(string $bf): void
+    {
+        $this->assertSame($this->naive($bf), $this->execute($bf));
+    }
+
+    #[DataProvider('idiomOptimisationProgramProvider')]
+    public function testSampleBackedIdiomsCompileWithoutGenericWhile(string $bf): void
+    {
+        $this->assertStringNotContainsString('while(', $this->compiler->toPHP($bf));
+    }
+
     public function testSeekRight(): void
     {
         // Current cell is 0 → `[` never enters; no `>` steps execute.
