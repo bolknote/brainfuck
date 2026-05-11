@@ -103,6 +103,10 @@ $i+=5;
 
 This reduces generated PHP size and runtime work.
 
+Run lengths are encoded with a two-digit count prefix (`00`-`99`) in the IR.
+Longer runs are therefore emitted as multiple counted chunks rather than one
+unbounded integer token.
+
 ### Opposing-Run Cancellation
 
 Opposing operations are reduced to their net effect:
@@ -463,6 +467,56 @@ The compiler specialises arithmetic for the configured cell mode:
 
 This preserves the requested BF semantics without adding masking work in
 unbounded mode.
+
+One small code-generation detail follows from this: bounded modes keep cell
+values non-negative through masking, but unbounded mode may contain negative
+integers. For optimised linear loops with negative factors, the generated PHP
+uses the absolute value of the source term and applies the sign separately:
+
+```php
+$d[$i+1]=($d[$i+1]??0)-abs($d[$i]??0)*3;
+```
+
+This is not a separate BF rewrite; it is the unbounded-mode emission form for
+the same linear-loop optimisation described above.
+
+### PHP Emission Details
+
+Some generated PHP forms are not separate BF optimisations, but they matter when
+reading compiler output.
+
+**Output is always byte-sized.**  The `.` opcode emits `chr()` of the current
+cell masked to one byte, even in 16-bit or unbounded cell modes:
+
+```php
+echo chr(($d[$i]??0)&255);
+```
+
+Cell arithmetic may use `&65535` or no mask, but output remains byte-oriented.
+
+**Input refill code depends on input mode.**  The `,` opcode consumes a queue of
+input bytes. When the queue is empty, generated PHP refills it from `STDIN`.
+Line-buffered mode uses `fgets()`, immediate mode uses `fgetc()`, and CRLF mode
+adds the same lone-LF normalisation used for prefilled input. These blocks are
+runtime I/O handling, not peephole optimisation.
+
+**Pointer side effects are split from cell writes.**  Some peephole patterns
+combine pointer movement and cell arithmetic, such as `++>>` or `<<+`. When the
+cell address would otherwise contain a side-effecting expression (`$i++`,
+`--$i`, `$i+=N`), the compiler emits the pointer update as a separate statement
+so the cell reference is evaluated exactly once.
+
+**Extension opcodes are direct emissions.**  When enabled, `#`, `Y`, and `@`
+compile to debug output, `pcntl_fork()`, and `random_int()` respectively:
+
+```php
+echo "$i: ".($d[$i]??0)."\n";
+$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;
+$d[$i]=random_int(0,255);
+```
+
+The random upper bound follows the selected cell width: `255`, `65535`, or
+`PHP_INT_MAX`.
 
 ## Terminology
 
