@@ -33,7 +33,7 @@ function enableImmediateStdinMode(bool $enabled): array
     }
 
     $metadata = stream_get_meta_data(STDIN);
-    $wasBlocking = $metadata['blocked'] === true;
+    $wasBlocking = $metadata['blocked'];
     stream_set_blocking(STDIN, false);
 
     return ['mode' => $mode[0], 'blocking' => $wasBlocking];
@@ -77,7 +77,7 @@ function ensureMemoryForLargeSource(string $source): void
         return;
     }
 
-    $current = memoryLimitToBytes((string) ini_get('memory_limit'));
+    $current = memoryLimitToBytes(ini_get('memory_limit'));
     if ($current !== -1) {
         ini_set('memory_limit', '-1');
     }
@@ -128,9 +128,6 @@ function writeCompiledCache(string $path, string $code): void
     }
 }
 
-/**
- * @return callable|null
- */
 function loadCompiledCache(string $path): ?callable
 {
     if (!is_file($path)) {
@@ -157,7 +154,7 @@ function applyBfrunOption(
     bool &$stdinLineBuffered,
     bool &$gzip,
 ): bool {
-    if (preg_match('/^--bits=(\d+)$/', $arg, $m)) {
+    if (preg_match('/^--bits=(\d+)$/', $arg, $m) === 1) {
         $cellBits = (int) $m[1];
 
         return true;

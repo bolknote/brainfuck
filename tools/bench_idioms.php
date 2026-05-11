@@ -3,7 +3,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__.'/../vendor/autoload.php';
 
 use BolkNote\Brainfuck\Compiler;
 
@@ -102,8 +102,8 @@ function normaliseBrainfuck(string $source): string
 function readFileOrFail(string $path): string
 {
     $source = file_get_contents($path);
-    if ($source === false) {
-        throw new RuntimeException("Cannot read {$path}");
+    if (false === $source) {
+        throw new RuntimeException('Cannot read '.$path);
     }
 
     return $source;
@@ -146,17 +146,17 @@ function runtimeBenchmarks(): array
             Compiler::CELL_BITS_8,
         ],
         'unbounded move 200k' => [
-            str_repeat('+', 200_000) . '[>+<-].',
+            str_repeat('+', 200_000).'[>+<-].',
             5,
             Compiler::CELL_BITS_UNBOUNDED,
         ],
         'unbounded scatter 150k' => [
-            str_repeat('+', 150_000) . '[>+>+<<-]>>.',
+            str_repeat('+', 150_000).'[>+>+<<-]>>.',
             5,
             Compiler::CELL_BITS_UNBOUNDED,
         ],
         'unbounded clearmerge 120k' => [
-            str_repeat('+', 120_000) . '>>+++<<[>+>[-]<<-].',
+            str_repeat('+', 120_000).'>>+++<<[>+>[-]<<-].',
             5,
             Compiler::CELL_BITS_UNBOUNDED,
         ],
@@ -166,7 +166,7 @@ function runtimeBenchmarks(): array
 function loadHeadCompiler(): bool
 {
     $source = shell_exec('git show HEAD:src/Compiler.php 2>/dev/null');
-    if (!is_string($source) || $source === '') {
+    if (!is_string($source) || '' === $source) {
         return false;
     }
 
@@ -198,9 +198,6 @@ function runCompiled(string $code, int $runs): float
     return (hrtime(true) - $start) / 1_000_000;
 }
 
-/**
- * @param object $compiler
- */
 function compileWith(object $compiler, string $source): string
 {
     if (!method_exists($compiler, 'compile')) {
@@ -224,7 +221,7 @@ printf("%'-105s\n", '');
 
 foreach (idiomBenchmarks() as $idiom => $config) {
     foreach ($config['files'] as $relativePath) {
-        $path = $root . '/' . $relativePath;
+        $path = $root.'/'.$relativePath;
         $source = readFileOrFail($path);
         $normalised = normaliseBrainfuck($source);
         $hits = substr_count($normalised, $config['pattern']);
@@ -269,9 +266,7 @@ printf(
 printf("%'-107s\n", '');
 
 foreach (runtimeBenchmarks() as $name => [$source, $runs, $cellBits]) {
-    /** @var class-string $baselineClass */
-    $baselineClass = 'Baseline\\Brainfuck\\Compiler';
-    $oldCompiler = new $baselineClass($cellBits);
+    $oldCompiler = new Baseline\Brainfuck\Compiler($cellBits);
     $newCompiler = new Compiler($cellBits);
 
     $oldCode = compileWith($oldCompiler, $source);

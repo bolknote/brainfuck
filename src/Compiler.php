@@ -7,41 +7,48 @@ namespace BolkNote\Brainfuck;
 class Compiler
 {
     public const int CELL_BITS_UNBOUNDED = 0;
+
     public const int CELL_BITS_8 = 8;
+
     public const int CELL_BITS_16 = 16;
+
     public const int DEFAULT_CELL_BITS = self::CELL_BITS_8;
 
     private const int TAPE_EXTENT = 65535;
+
     private const int TAPE_SIZE = self::TAPE_EXTENT * 2;
+
     private const int MAX_REPEAT = 99;
 
     /** 8-bit cell mask; also limits `chr()` argument to a byte (see compileCode `E`). */
     private const int MASK_BYTE = 0xFF;
+
     private const int MASK_WORD = 0xFFFF;
-    private const int MASK_INT  = PHP_INT_MAX;
+
+    private const int MASK_INT = \PHP_INT_MAX;
 
     /** Bitmask applied to every cell write: MASK_BYTE / MASK_WORD / MASK_INT. */
     private readonly int $cellMask;
 
     /**
-     * @param int  $cellBits  Cell width in bits.
-     *                        CELL_BITS_8  — standard BF (default): cells wrap at 256.
-     *                        CELL_BITS_16 — extended BF: cells wrap at 65536.
-     *                        CELL_BITS_UNBOUNDED — cells wrap at PHP_INT_MAX.
-     * @param bool $brainfork If true, opcode `Y` is recognised ([Brainfork](https://esolangs.org/wiki/Brainfork):
-     *                        fork via `pcntl_fork()`). If false, `Y` is stripped like any non-BF character
-     *                        (pure Brainfuck).
-     * @param bool $debug        If true, opcode `#` emits a debug dump (`$i: $d[$i]`). If false (default),
-     *                           `#` is treated as an ordinary comment character and ignored.
-     * @param bool $randomOpcode If true, opcode `@` assigns `random_int(0, N)` to the current cell,
-     *                           where N is `255` (8-bit), `65535` (16-bit), or `PHP_INT_MAX` (unbounded).
-     *                           If false (default), `@` is stripped like a comment.
-     * @param bool $inputCrLf        If true, lone LF (`\n`) not preceded by CR (`\r`) is rewritten to CRLF (`\r\n`)
-     *                               in prefilled input, line-buffered {@see fgets()}, and immediate {@see fgetc()}
-     *                               (with `$bfInputPrev` when needed).
+     * @param int  $cellBits          Cell width in bits.
+     *                                CELL_BITS_8  — standard BF (default): cells wrap at 256.
+     *                                CELL_BITS_16 — extended BF: cells wrap at 65536.
+     *                                CELL_BITS_UNBOUNDED — cells wrap at PHP_INT_MAX.
+     * @param bool $brainfork         If true, opcode `Y` is recognised ([Brainfork](https://esolangs.org/wiki/Brainfork):
+     *                                fork via `pcntl_fork()`). If false, `Y` is stripped like any non-BF character
+     *                                (pure Brainfuck).
+     * @param bool $debug             If true, opcode `#` emits a debug dump (`$i: $d[$i]`). If false (default),
+     *                                `#` is treated as an ordinary comment character and ignored.
+     * @param bool $randomOpcode      If true, opcode `@` assigns `random_int(0, N)` to the current cell,
+     *                                where N is `255` (8-bit), `65535` (16-bit), or `PHP_INT_MAX` (unbounded).
+     *                                If false (default), `@` is stripped like a comment.
+     * @param bool $inputCrLf         if true, lone LF (`\n`) not preceded by CR (`\r`) is rewritten to CRLF (`\r\n`)
+     *                                in prefilled input, line-buffered {@see fgets()}, and immediate {@see fgetc()}
+     *                                (with `$bfInputPrev` when needed)
      * @param bool $stdinLineBuffered If true (default), each `,` reload uses `fgets` — the kernel tty delivers a
-     *                               whole line after Enter. If false, each reload uses `fgetc(STDIN)`; the CLI
-     *                               wrapper puts interactive stdin into raw mode for this case.
+     *                                whole line after Enter. If false, each reload uses `fgetc(STDIN)`; the CLI
+     *                                wrapper puts interactive stdin into raw mode for this case.
      */
     public function __construct(
         int $cellBits = self::DEFAULT_CELL_BITS,
@@ -52,8 +59,8 @@ class Compiler
         private readonly bool $stdinLineBuffered = true,
     ) {
         $this->cellMask = match ($cellBits) {
-            self::CELL_BITS_8         => self::MASK_BYTE,
-            self::CELL_BITS_16        => self::MASK_WORD,
+            self::CELL_BITS_8 => self::MASK_BYTE,
+            self::CELL_BITS_16 => self::MASK_WORD,
             self::CELL_BITS_UNBOUNDED => self::MASK_INT,
             default => throw new \InvalidArgumentException('cellBits must be 0, 8, or 16'),
         };
@@ -64,7 +71,8 @@ class Compiler
      *
      * @param string $str   BF source code
      * @param string $input Optional pre-filled input (converted to char codes)
-     * @return string       Executable PHP code
+     *
+     * @return string Executable PHP code
      */
     public function compile(string $str, string $input = ''): string
     {
@@ -78,36 +86,37 @@ class Compiler
     public function addHeader(string $str, string $input = ''): string
     {
         $tapeStart = intdiv(self::TAPE_SIZE, 2);
-        $prefix    = '';
+        $prefix = '';
         if (!$this->stdinLineBuffered && $this->inputCrLf) {
             $prefix = '$bfInputPrev=0;';
         }
-        $str = $prefix . '$d=[];$i=' . $tapeStart . ';' . $str;
 
-        if ($input === '') {
-            return 'return static function() { $in=[];' . $str . ' };';
+        $str = $prefix.'$d=[];$i='.$tapeStart.';'.$str;
+
+        if ('' === $input) {
+            return 'return static function() { $in=[];'.$str.' };';
         }
 
         if ($this->inputCrLf) {
             $exported = var_export($input, true);
 
-            return 'return static function() { $__bfIn=' . $exported . ';$in=array_values(unpack(\'c*\',(preg_replace(\'/(?<!\r)\n/\',"\r\n",$__bfIn)??$__bfIn)."\0"));' . $str . ' };';
+            return 'return static function() { $__bfIn='.$exported.';$in=array_values(unpack(\'c*\',(preg_replace(\'/(?<!\r)\n/\',"\r\n",$__bfIn)??$__bfIn)."\0"));'.$str.' };';
         }
 
         $codes = [];
-        $unpacked = unpack('c*', $input . "\0");
-        if (is_array($unpacked)) {
+        $unpacked = unpack('c*', $input."\0");
+        if (\is_array($unpacked)) {
             $codes = array_map(
                 static fn (mixed $b): string => match (true) {
-                    is_int($b) => (string) $b,
-                    is_string($b) => $b,
+                    \is_int($b) => (string) $b,
+                    \is_string($b) => $b,
                     default => '0',
                 },
                 array_values($unpacked),
             );
         }
 
-        return 'return static function() { $in=[' . implode(',', $codes) . '];' . $str . ' };';
+        return 'return static function() { $in=['.implode(',', $codes).'];'.$str.' };';
     }
 
     /**
@@ -122,10 +131,10 @@ class Compiler
         if ($this->stdinLineBuffered) {
             $block = 'if(!$in){$s=fgets(STDIN)??"";';
             if ($this->inputCrLf) {
-                $block .= '$s=preg_replace(\'/(?<!\r)\n/\',' . "\"\\r\\n\"" . ',$s)??$s;';
+                $block .= '$s=preg_replace(\'/(?<!\r)\n/\',"\r\n",$s)??$s;';
             }
 
-            return $block . '$in=array_values(unpack("c*",$s));$in[]=0;}';
+            return $block.'$in=array_values(unpack("c*",$s));$in[]=0;}';
         }
 
         if ($this->inputCrLf) {
@@ -149,10 +158,10 @@ class Compiler
      */
     protected function prepare(string $str): string
     {
-        $forkChars   = $this->brainfork ? 'Y' : '';
-        $debugChars  = $this->debug ? '#' : '';
+        $forkChars = $this->brainfork ? 'Y' : '';
+        $debugChars = $this->debug ? '#' : '';
         $randomChars = $this->randomOpcode ? '@' : '';
-        $str         = preg_replace("/[^\\-+\\[\\]><,.{$debugChars}{$forkChars}{$randomChars}]+/", '', $str) ?? '';
+        $str = preg_replace(\sprintf('/[^\-+\[\]><,.%s%s%s]+/', $debugChars, $forkChars, $randomChars), '', $str) ?? '';
 
         $trans = [
             '[<]' => 'l',
@@ -171,7 +180,7 @@ class Compiler
         // Cancel out opposing runs before IR translation, so large sources are
         // shrunk before strtr walks the string: +++-- -> +, >>>< -> >>.
         foreach (['-+', '<>'] as $set) {
-            $str = preg_replace_callback("/[$set]{2,}/S", static function ($m) {
+            $str = preg_replace_callback(\sprintf('/[%s]{2,}/S', $set), static function (array $m): string {
                 $leftOpcode = $m[0][0];
                 $rightOpcode = match ($leftOpcode) {
                     '-' => '+',
@@ -195,8 +204,8 @@ class Compiler
 
         // Encode run lengths: +++ -> 03+  (max MAX_REPEAT per group)
         $str = preg_replace_callback(
-            '/([-+<>])(\\1{1,' . (self::MAX_REPEAT - 1) . '})/',
-            static fn ($m) => sprintf('%02d%s', strlen($m[2]) + 1, $m[1]),
+            '/([-+<>])(\\1{1,'.(self::MAX_REPEAT - 1).'})/',
+            static fn ($m): string => \sprintf('%02d%s', \strlen($m[2]) + 1, $m[1]),
             $str,
         ) ?? '';
 
@@ -210,19 +219,25 @@ class Compiler
 
         // Dead loops after balanced multiply/copy loops (M or c in body + balanced moves
         // → $d[$i] = 0 at exit). Insert temporary Z marker, then strip following loops.
-        $str = preg_replace_callback('/L([MPmpc\d]+)R/', function (array $m): string {
+        $str = preg_replace_callback('/L([MPmpc\d]+)R/', static function (array $m): string {
             $body = $m[1];
             if (!str_contains($body, 'M') && !str_contains($body, 'c')) {
                 return $m[0];
             }
+
             $mCount = 0;
             $pCount = 0;
-            preg_match_all('/(\d{2}|)([mp])/S', $body, $matches, PREG_SET_ORDER);
+            preg_match_all('/(\d{2}|)([mp])/S', $body, $matches, \PREG_SET_ORDER);
             foreach ($matches as $match) {
-                $count = (int) ($match[1] ?: 1);
-                $match[2] === 'm' ? $mCount += $count : $pCount += $count;
+                $count = '' !== $match[1] ? (int) $match[1] : 1;
+                if ('m' === $match[2]) {
+                    $mCount += $count;
+                } else {
+                    $pCount += $count;
+                }
             }
-            return ($mCount === $pCount) ? $m[0] . 'Z' : $m[0];
+
+            return ($mCount === $pCount) ? $m[0].'Z' : $m[0];
         }, $str) ?? $str;
         $str = preg_replace('/Z(L((?>[^LR]+)|(?R))*R)+/x', 'Z', $str) ?? $str;
         $str = str_replace('Z', '', $str);
@@ -234,7 +249,7 @@ class Compiler
     }
 
     /**
-     * Build a relative-addressing cell operation: e.g. `$d[$i+3]+=5;`
+     * Build a relative-addressing cell operation: e.g. `$d[$i+3]+=5;`.
      *
      * @param string     $dir   Direction opcode: 'm' (left) or 'p' (right)
      * @param string|int $shift Distance from current pointer
@@ -243,16 +258,16 @@ class Compiler
      */
     protected function dirOp(string $dir, string|int $shift, string $col, string $op): string
     {
-        $sign = $dir === 'm' ? '-' : '+';
-        $distance = $shift ? (int) $shift : 1;
-        $ref = '$d[$i' . $sign . $distance . ']';
+        $sign = 'm' === $dir ? '-' : '+';
+        $distance = '' !== $shift && 0 !== $shift ? (int) $shift : 1;
+        $ref = '$d[$i'.$sign.$distance.']';
 
-        if ($op === 'c') {
-            return $ref . '=0;';
+        if ('c' === $op) {
+            return $ref.'=0;';
         }
 
-        $operator = $op === 'M' ? '-' : '+';
-        $amount = $col !== '' ? (int) $col : 1;
+        $operator = 'M' === $op ? '-' : '+';
+        $amount = '' !== $col ? (int) $col : 1;
 
         return $this->wrapCell($ref, $operator, $amount);
     }
@@ -264,35 +279,36 @@ class Compiler
      * the pointer update is emitted as a separate statement so the cell address
      * is only evaluated once — safe for both wrapped and non-wrapped modes.
      *
-     * @param string|int  $repeat  Run length (0 = single step, N = N steps)
-     * @param string      $op      Opcode
-     * @param string|null $idx     Pointer expression (null = use current $i)
+     * @param string|int  $repeat Run length (0 = single step, N = N steps)
+     * @param string      $op     Opcode
+     * @param string|null $idx    Pointer expression (null = use current $i)
      */
     protected function op(string|int $repeat, string $op, ?string $idx = null): string
     {
         $repeat = (int) $repeat;
 
-        if ($op === 'm') {
-            return $repeat ? '$i-=' . $repeat . ';' : '--$i;';
-        }
-        if ($op === 'p') {
-            return $repeat ? '$i+=' . $repeat . ';' : '++$i;';
+        if ('m' === $op) {
+            return 0 !== $repeat ? '$i-='.$repeat.';' : '--$i;';
         }
 
-        $cell = $idx === null ? '$d[$i]' : '$d[' . $idx . ']';
-
-        if ($op === 'c') {
-            return $cell . '=0;';
+        if ('p' === $op) {
+            return 0 !== $repeat ? '$i+='.$repeat.';' : '++$i;';
         }
 
-        if ($op !== 'M' && $op !== 'P') {
+        $cell = null === $idx ? '$d[$i]' : '$d['.$idx.']';
+
+        if ('c' === $op) {
+            return $cell.'=0;';
+        }
+
+        if ('M' !== $op && 'P' !== $op) {
             return str_repeat($op, 1 + $repeat);
         }
 
-        $amount = $repeat ?: 1;
-        $operator = $op === 'M' ? '-' : '+';
+        $amount = 0 !== $repeat ? $repeat : 1;
+        $operator = 'M' === $op ? '-' : '+';
 
-        if ($idx === null) {
+        if (null === $idx) {
             return $this->wrapCell('$d[$i]', $operator, $amount);
         }
 
@@ -314,15 +330,16 @@ class Compiler
         $cellOp = $this->wrapCell('$d[$i]', $operator, $amount);
 
         // Post-increment / post-decrement: cell first, then pointer.
-        if ($idx === '$i++') {
-            return $cellOp . '$i++;';
+        if ('$i++' === $idx) {
+            return $cellOp.'$i++;';
         }
-        if ($idx === '$i--') {
-            return $cellOp . '$i--;';
+
+        if ('$i--' === $idx) {
+            return $cellOp.'$i--;';
         }
 
         // Pre-increment / pre-decrement / compound assignment: pointer first, then cell.
-        return $idx . ';' . $cellOp;
+        return $idx.';'.$cellOp;
     }
 
     /**
@@ -333,12 +350,12 @@ class Compiler
      */
     private function wrapCell(string $ref, string $op, int $amount): string
     {
-        if ($this->cellMask === self::MASK_INT) {
+        if (self::MASK_INT === $this->cellMask) {
             // Unbounded mode: no masking, use raw PHP integers.
-            return $ref . '=(' . $ref . '??0)' . $op . $amount . ';';
+            return $ref.'=('.$ref.'??0)'.$op.$amount.';';
         }
 
-        return $ref . '=((' . $ref . '??0)' . $op . $amount . ')&' . $this->cellMask . ';';
+        return $ref.'=(('.$ref.'??0)'.$op.$amount.')&'.$this->cellMask.';';
     }
 
     /**
@@ -346,17 +363,18 @@ class Compiler
      *
      * @param array<int|string, mixed> $m
      */
-    private static function pcreGroup(array $m, int $index): string
+    private function pcreGroup(array $m, int $index): string
     {
-        if (! array_key_exists($index, $m)) {
+        if (!\array_key_exists($index, $m)) {
             return '';
         }
 
         $v = $m[$index];
-        if (is_string($v)) {
+        if (\is_string($v)) {
             return $v;
         }
-        if (is_int($v) || is_float($v)) {
+
+        if (\is_int($v) || \is_float($v)) {
             return (string) $v;
         }
 
@@ -369,9 +387,9 @@ class Compiler
     private function cellRef(int $offset): string
     {
         return match (true) {
-            $offset > 0  => '$d[$i+' . $offset . ']',
-            $offset === 0 => '$d[$i]',
-            default       => '$d[$i' . $offset . ']',
+            $offset > 0 => '$d[$i+'.$offset.']',
+            0 === $offset => '$d[$i]',
+            default => '$d[$i'.$offset.']',
         };
     }
 
@@ -391,19 +409,19 @@ class Compiler
      */
     private function collectLoopEffects(string $str): ?array
     {
-        $pos     = 0;
+        $pos = 0;
         $divider = 0;
         /** @var array<int, int> $effects */
         $effects = [];
 
-        $len = strlen($str);
-        for ($k = 0; $k < $len; $k++) {
+        $len = \strlen($str);
+        for ($k = 0; $k < $len; ++$k) {
             if ((string) (int) $str[$k] === $str[$k]) {
                 $num = (int) substr($str, $k++, 2);
-                $op  = $str[++$k];
+                $op = $str[++$k];
             } else {
                 $num = 1;
-                $op  = $str[$k];
+                $op = $str[$k];
             }
 
             switch ($op) {
@@ -416,18 +434,20 @@ class Compiler
                     break;
 
                 case 'M':
-                    if ($pos === 0) {
+                    if (0 === $pos) {
                         $divider += $num;
                     } else {
                         $effects[$pos] = ($effects[$pos] ?? 0) - $num;
                     }
+
                     break;
 
                 case 'P':
-                    if ($pos === 0) {
+                    if (0 === $pos) {
                         // Increment at controller position: wrap-around loop, cannot linearise.
                         return null;
                     }
+
                     $effects[$pos] = ($effects[$pos] ?? 0) + $num;
                     break;
 
@@ -444,7 +464,7 @@ class Compiler
      * divides evenly by $divider.  All effects are expressed as `$d[$i] * K`
      * multiplications (integer K).
      *
-     * @param array<int, int> $effects  offset => net delta per iteration
+     * @param array<int, int> $effects offset => net delta per iteration
      */
     private function genStraightLine(array $effects, int $divider): string
     {
@@ -453,24 +473,24 @@ class Compiler
 
         foreach ($effects as $offset => $delta) {
             $factor = intdiv($delta, $divider);
-            if ($factor === 0) {
+            if (0 === $factor) {
                 continue;
             }
 
-            $ref    = $this->cellRef($offset);
-            $absF   = abs($factor);
-            $op     = $factor > 0 ? '+' : '-';
-            $mult   = $absF === 1 ? '($d[$i]??0)' : '($d[$i]??0)*' . $absF;
+            $ref = $this->cellRef($offset);
+            $absF = abs($factor);
+            $op = $factor > 0 ? '+' : '-';
+            $mult = 1 === $absF ? '($d[$i]??0)' : '($d[$i]??0)*'.$absF;
 
-            if ($this->cellMask !== self::MASK_INT) {
-                $out .= $ref . '=((' . $ref . '??0)' . $op . $mult . ')&' . $this->cellMask . ';';
+            if (self::MASK_INT !== $this->cellMask) {
+                $out .= $ref.'=(('.$ref.'??0)'.$op.$mult.')&'.$this->cellMask.';';
             } else {
-                $absOp = $absF === 1 ? 'abs($d[$i]??0)' : 'abs($d[$i]??0)*' . $absF;
-                $out .= $ref . '=(' . $ref . '??0)' . $op . $absOp . ';';
+                $absOp = 1 === $absF ? 'abs($d[$i]??0)' : 'abs($d[$i]??0)*'.$absF;
+                $out .= $ref.'=('.$ref.'??0)'.$op.$absOp.';';
             }
         }
 
-        return $out . '$d[$i]=0;';
+        return $out.'$d[$i]=0;';
     }
 
     /**
@@ -479,7 +499,7 @@ class Compiler
      * $divider.  The guard guarantees that $d[$i] % $divider === 0 here, so
      * it is safe to use intdiv (or a bitshift for power-of-2 divisors).
      *
-     * @param array<int, int> $effects  offset => net delta per iteration
+     * @param array<int, int> $effects offset => net delta per iteration
      */
     private function genFastPath(array $effects, int $divider): string
     {
@@ -489,48 +509,48 @@ class Compiler
         // For other divisors, use `(int)($d[$i]/D)` rather than `intdiv($d[$i],D)`
         // because `intdiv(a,b)` contains a comma which is an IR input opcode (,)
         // and would be replaced by the read-input code during strtr.
-        $isPow2   = ($divider & ($divider - 1)) === 0;
-        $shift    = $isPow2 ? (int) log($divider, 2) : 0;
+        $isPow2 = ($divider & ($divider - 1)) === 0;
+        $shift = $isPow2 ? (int) log($divider, 2) : 0;
         $quotient = $isPow2
-            ? '(($d[$i]??0)>>' . $shift . ')'
-            : '(int)(($d[$i]??0)/' . $divider . ')';
+            ? '(($d[$i]??0)>>'.$shift.')'
+            : '(int)(($d[$i]??0)/'.$divider.')';
 
         $out = '';
 
         foreach ($effects as $offset => $delta) {
-            if ($delta === 0) {
+            if (0 === $delta) {
                 continue;
             }
 
-            $ref      = $this->cellRef($offset);
+            $ref = $this->cellRef($offset);
             $absDelta = abs($delta);
-            $op       = $delta > 0 ? '+' : '-';
+            $op = $delta > 0 ? '+' : '-';
 
-            if ($delta % $divider === 0) {
+            if (0 === $delta % $divider) {
                 // Integer factor: reuse the cheaper $d[$i]*K form.
                 $factor = abs(intdiv($delta, $divider));
-                $mult   = $factor === 1 ? '($d[$i]??0)' : '($d[$i]??0)*' . $factor;
+                $mult = 1 === $factor ? '($d[$i]??0)' : '($d[$i]??0)*'.$factor;
 
-                if ($this->cellMask !== self::MASK_INT) {
-                    $out .= $ref . '=((' . $ref . '??0)' . $op . $mult . ')&' . $this->cellMask . ';';
+                if (self::MASK_INT !== $this->cellMask) {
+                    $out .= $ref.'=(('.$ref.'??0)'.$op.$mult.')&'.$this->cellMask.';';
                 } else {
-                    $absOp = $factor === 1 ? 'abs($d[$i]??0)' : 'abs($d[$i]??0)*' . $factor;
-                    $out .= $ref . '=(' . $ref . '??0)' . $op . $absOp . ';';
+                    $absOp = 1 === $factor ? 'abs($d[$i]??0)' : 'abs($d[$i]??0)*'.$factor;
+                    $out .= $ref.'=('.$ref.'??0)'.$op.$absOp.';';
                 }
             } else {
                 // Non-integer factor: runtime quotient required.
-                $mult = $absDelta === 1 ? $quotient : $quotient . '*' . $absDelta;
+                $mult = 1 === $absDelta ? $quotient : $quotient.'*'.$absDelta;
 
-                if ($this->cellMask !== self::MASK_INT) {
-                    $out .= $ref . '=((' . $ref . '??0)' . $op . $mult . ')&' . $this->cellMask . ';';
+                if (self::MASK_INT !== $this->cellMask) {
+                    $out .= $ref.'=(('.$ref.'??0)'.$op.$mult.')&'.$this->cellMask.';';
                 } else {
-                    $rhs = $absDelta === 1 ? $quotient : $quotient . '*' . $absDelta;
-                    $out .= $ref . '=(' . $ref . '??0)' . $op . $rhs . ';';
+                    $rhs = 1 === $absDelta ? $quotient : $quotient.'*'.$absDelta;
+                    $out .= $ref.'=('.$ref.'??0)'.$op.$rhs.';';
                 }
             }
         }
 
-        return $out . '$d[$i]=0;';
+        return $out.'$d[$i]=0;';
     }
 
     /**
@@ -553,21 +573,21 @@ class Compiler
         // outer loop as a `while`.
         if (str_contains($str, 'L')) {
             $oneShot = $this->tryNestedOneShotOpt($str);
-            if ($oneShot !== null) {
+            if (null !== $oneShot) {
                 return $oneShot;
             }
 
             $optimised = $this->tryMulOpt($str);
-            if ($optimised !== null) {
+            if (null !== $optimised) {
                 return $optimised;
             }
 
-            return 'L' . $str . 'R';
+            return 'L'.$str.'R';
         }
 
         if (str_contains($str, 'c')) {
             $oneShot = $this->tryPointerChangingOneShotOpt($str);
-            if ($oneShot !== null) {
+            if (null !== $oneShot) {
                 return $oneShot;
             }
         }
@@ -575,12 +595,13 @@ class Compiler
         // Pointer moves must balance: the body must leave the pointer at its
         // starting position, otherwise the loop condition cell changes each pass.
         $moves = ['m' => 0, 'p' => 0];
-        preg_match_all('/(\d{2}|)([mp])/S', $str, $matches, PREG_SET_ORDER);
+        preg_match_all('/(\d{2}|)([mp])/S', $str, $matches, \PREG_SET_ORDER);
         foreach ($matches as $match) {
-            $moves[$match[2]] += $match[1] ?: 1;
+            $moves[$match[2]] += '' !== $match[1] ? (int) $match[1] : 1;
         }
+
         if ($moves['m'] !== $moves['p']) {
-            return 'L' . $str . 'R';
+            return 'L'.$str.'R';
         }
 
         // Loops containing [-] (opcode c) need special handling because the
@@ -591,8 +612,8 @@ class Compiler
         }
 
         $analysis = $this->collectLoopEffects($str);
-        if ($analysis === null) {
-            return 'L' . $str . 'R';
+        if (null === $analysis) {
+            return 'L'.$str.'R';
         }
 
         ['divider' => $divider, 'effects' => $effects] = $analysis;
@@ -600,7 +621,7 @@ class Compiler
         // Check whether every per-iteration delta divides evenly by the controller step.
         $allInteger = true;
         foreach ($effects as $delta) {
-            if ($delta % $divider !== 0) {
+            if (0 !== $delta % $divider) {
                 $allInteger = false;
                 break;
             }
@@ -612,8 +633,8 @@ class Compiler
 
         // Non-integer case: only safe to optimise for bounded cells (8/16-bit)
         // where $d[$i] is always non-negative and the divisibility check is reliable.
-        if ($this->cellMask === self::MASK_INT) {
-            return 'L' . $str . 'R';
+        if (self::MASK_INT === $this->cellMask) {
+            return 'L'.$str.'R';
         }
 
         // Emit a runtime divisibility guard followed by the unconditional fast path:
@@ -630,12 +651,12 @@ class Compiler
         // NOTE: `else` cannot be used here because it contains the character `l`
         // which is an IR opcode and would be mis-compiled by pattern 8.
         // The `W` pseudobytecode marks "while without further loop optimisation".
-        $guard    = ($divider & ($divider - 1)) === 0                // power of 2?
-            ? '($d[$i]??0)&' . ($divider - 1)                     //   bitwise AND
-            : '($d[$i]??0)%' . $divider;
+        $guard = ($divider & ($divider - 1)) === 0                // power of 2?
+            ? '($d[$i]??0)&'.($divider - 1)                     //   bitwise AND
+            : '($d[$i]??0)%'.$divider;
         $fastPath = $this->genFastPath($effects, $divider);
 
-        return 'if(' . $guard . '){W' . $str . 'R}' . $fastPath;
+        return 'if('.$guard.'){W'.$str.'R}'.$fastPath;
     }
 
     /**
@@ -650,9 +671,9 @@ class Compiler
         $pos = 0;
         /** @var array<int, true> $knownZero */
         $knownZero = [];
-        $len = strlen($str);
+        $len = \strlen($str);
 
-        for ($k = 0; $k < $len; $k++) {
+        for ($k = 0; $k < $len; ++$k) {
             if ((string) (int) $str[$k] === $str[$k]) {
                 $num = (int) substr($str, $k++, 2);
                 $op = $str[++$k] ?? '';
@@ -661,19 +682,22 @@ class Compiler
                 $op = $str[$k];
             }
 
-            if ($op === 'p') {
+            if ('p' === $op) {
                 $pos += $num;
                 continue;
             }
-            if ($op === 'm') {
+
+            if ('m' === $op) {
                 $pos -= $num;
                 continue;
             }
-            if ($op === 'c') {
+
+            if ('c' === $op) {
                 $knownZero[$pos] = true;
                 continue;
             }
-            if ($op === 'P' || $op === 'M') {
+
+            if ('P' === $op || 'M' === $op) {
                 unset($knownZero[$pos]);
                 continue;
             }
@@ -685,7 +709,7 @@ class Compiler
             return null;
         }
 
-        return 'if($d[$i]??0){' . $this->compileCode($str) . '}';
+        return 'if($d[$i]??0){'.$this->compileCode($str).'}';
     }
 
     /**
@@ -703,20 +727,20 @@ class Compiler
 
         // Embed only straight-line/if output. Raw loops, scans, I/O, and
         // extension opcodes carry letters that later IR passes would still see.
-        if (preg_match('/[MPmplrcELWR,#Y@]/', $body) === 1) {
+        if (1 === preg_match('/[MPmplrcELWR,#Y@]/', $body)) {
             return null;
         }
 
-        return 'if($d[$i]??0){' . $body . '}';
+        return 'if($d[$i]??0){'.$body.'}';
     }
 
     private function topLevelClearsControllerAndBalances(string $str): bool
     {
         $pos = 0;
         $hasClearAtZero = false;
-        $len = strlen($str);
+        $len = \strlen($str);
 
-        for ($k = 0; $k < $len; $k++) {
+        for ($k = 0; $k < $len; ++$k) {
             if ((string) (int) $str[$k] === $str[$k]) {
                 $num = (int) substr($str, $k++, 2);
                 $op = $str[++$k] ?? '';
@@ -725,37 +749,40 @@ class Compiler
                 $op = $str[$k];
             }
 
-            if ($op === 'L') {
+            if ('L' === $op) {
                 $end = $this->findLoopEnd($str, $k);
-                if ($end === null || !$this->loopBodyHasBalancedPointer(substr($str, $k + 1, $end - $k - 1))) {
+                if (null === $end || !$this->loopBodyHasBalancedPointer(substr($str, $k + 1, $end - $k - 1))) {
                     return false;
                 }
+
                 $k = $end;
                 continue;
             }
 
-            if ($op === 'p') {
+            if ('p' === $op) {
                 $pos += $num;
                 continue;
             }
-            if ($op === 'm') {
+
+            if ('m' === $op) {
                 $pos -= $num;
                 continue;
             }
-            if ($op === 'c' && $pos === 0) {
+
+            if ('c' === $op && 0 === $pos) {
                 $hasClearAtZero = true;
             }
         }
 
-        return $hasClearAtZero && $pos === 0;
+        return $hasClearAtZero && 0 === $pos;
     }
 
     private function loopBodyHasBalancedPointer(string $str): bool
     {
         $pos = 0;
-        $len = strlen($str);
+        $len = \strlen($str);
 
-        for ($k = 0; $k < $len; $k++) {
+        for ($k = 0; $k < $len; ++$k) {
             if ((string) (int) $str[$k] === $str[$k]) {
                 $num = (int) substr($str, $k++, 2);
                 $op = $str[++$k] ?? '';
@@ -764,36 +791,37 @@ class Compiler
                 $op = $str[$k];
             }
 
-            if ($op === 'L') {
+            if ('L' === $op) {
                 $end = $this->findLoopEnd($str, $k);
-                if ($end === null || !$this->loopBodyHasBalancedPointer(substr($str, $k + 1, $end - $k - 1))) {
+                if (null === $end || !$this->loopBodyHasBalancedPointer(substr($str, $k + 1, $end - $k - 1))) {
                     return false;
                 }
+
                 $k = $end;
                 continue;
             }
 
-            if ($op === 'p') {
+            if ('p' === $op) {
                 $pos += $num;
-            } elseif ($op === 'm') {
+            } elseif ('m' === $op) {
                 $pos -= $num;
             }
         }
 
-        return $pos === 0;
+        return 0 === $pos;
     }
 
     private function findLoopEnd(string $str, int $start): ?int
     {
         $depth = 1;
-        $len = strlen($str);
+        $len = \strlen($str);
 
-        for ($i = $start + 1; $i < $len; $i++) {
-            if ($str[$i] === 'L') {
+        for ($i = $start + 1; $i < $len; ++$i) {
+            if ('L' === $str[$i]) {
                 ++$depth;
-            } elseif ($str[$i] === 'R') {
+            } elseif ('R' === $str[$i]) {
                 --$depth;
-                if ($depth === 0) {
+                if (0 === $depth) {
                     return $i;
                 }
             }
@@ -812,7 +840,7 @@ class Compiler
     private function parseLoopTokens(string $body): ?array
     {
         $tokens = [];
-        $len = strlen($body);
+        $len = \strlen($body);
         $k = 0;
 
         while ($k < $len) {
@@ -822,32 +850,36 @@ class Compiler
                 if ($k + 2 >= $len) {
                     return null;
                 }
+
                 $num = (int) substr($body, $k, 2);
                 $tokens[] = ['op' => $body[$k + 2], 'num' => $num];
                 $k += 3;
                 continue;
             }
 
-            if ($c === 'L') {
+            if ('L' === $c) {
                 // Find matching R; only one level of nesting is supported, so
                 // the inner body must not contain another `L`.
                 $j = $k + 1;
-                while ($j < $len && $body[$j] !== 'R') {
-                    if ($body[$j] === 'L') {
+                while ($j < $len && 'R' !== $body[$j]) {
+                    if ('L' === $body[$j]) {
                         return null;
                     }
-                    $j++;
+
+                    ++$j;
                 }
+
                 if ($j >= $len) {
                     return null;
                 }
+
                 $tokens[] = ['op' => 'L', 'inner' => substr($body, $k + 1, $j - $k - 1)];
                 $k = $j + 1;
                 continue;
             }
 
             $tokens[] = ['op' => $c, 'num' => 1];
-            $k++;
+            ++$k;
         }
 
         return $tokens;
@@ -867,11 +899,11 @@ class Compiler
     private function analyseFlatScatter(string $body): ?array
     {
         $tokens = $this->parseLoopTokens($body);
-        if ($tokens === null) {
+        if (null === $tokens) {
             return null;
         }
 
-        if (count($tokens) < 1 || $tokens[0]['op'] !== 'M' || ($tokens[0]['num'] ?? 0) !== 1) {
+        if (\count($tokens) < 1 || 'M' !== $tokens[0]['op'] || ($tokens[0]['num'] ?? 0) !== 1) {
             return null;
         }
 
@@ -879,33 +911,34 @@ class Compiler
         $targets = [];
 
         foreach ($tokens as $idx => $t) {
-            if ($idx === 0) {
+            if (0 === $idx) {
                 continue; // skip controller
             }
 
             $op = $t['op'];
             $num = $t['num'] ?? 1;
 
-            if ($op === 'p') {
+            if ('p' === $op) {
                 $pos += $num;
-            } elseif ($op === 'm') {
+            } elseif ('m' === $op) {
                 $pos -= $num;
-            } elseif ($op === 'P' || $op === 'M') {
-                if ($pos === 0) {
+            } elseif ('P' === $op || 'M' === $op) {
+                if (0 === $pos) {
                     return null; // extra source modification breaks the scatter model
                 }
-                $targets[$pos] = ($targets[$pos] ?? 0) + ($op === 'P' ? $num : -$num);
+
+                $targets[$pos] = ($targets[$pos] ?? 0) + ('P' === $op ? $num : -$num);
             } else {
                 return null; // L, c, etc. not allowed inside a scatter body
             }
         }
 
-        if ($pos !== 0) {
+        if (0 !== $pos) {
             return null;
         }
 
-        $targets = array_filter($targets, static fn (int $v): bool => $v !== 0);
-        if ($targets === []) {
+        $targets = array_filter($targets, static fn (int $v): bool => 0 !== $v);
+        if ([] === $targets) {
             return null;
         }
 
@@ -934,12 +967,12 @@ class Compiler
     private function tryMulOpt(string $body): ?string
     {
         $tokens = $this->parseLoopTokens($body);
-        if ($tokens === null) {
+        if (null === $tokens) {
             return null;
         }
 
         // First token: controller M with count 1.
-        if (count($tokens) < 4 || $tokens[0]['op'] !== 'M' || ($tokens[0]['num'] ?? 0) !== 1) {
+        if (\count($tokens) < 4 || 'M' !== $tokens[0]['op'] || ($tokens[0]['num'] ?? 0) !== 1) {
             return null;
         }
 
@@ -949,93 +982,101 @@ class Compiler
         /** @var array{pos: int, target: int}|null $gather */
         $gather = null;
 
-        $count = count($tokens);
-        for ($i = 1; $i < $count; $i++) {
+        $count = \count($tokens);
+        for ($i = 1; $i < $count; ++$i) {
             $t = $tokens[$i];
             $op = $t['op'];
             $num = $t['num'] ?? 1;
 
-            if ($op === 'p') {
+            if ('p' === $op) {
                 $pos += $num;
                 continue;
             }
-            if ($op === 'm') {
+
+            if ('m' === $op) {
                 $pos -= $num;
                 continue;
             }
-            if ($op !== 'L') {
+
+            if ('L' !== $op) {
                 return null; // outer body must contain only moves and inner loops
             }
 
             $eff = $this->analyseFlatScatter($t['inner'] ?? '');
-            if ($eff === null) {
+            if (null === $eff) {
                 return null;
             }
 
-            if ($scatter === null) {
-                if (count($eff['targets']) < 2) {
+            if (null === $scatter) {
+                if (\count($eff['targets']) < 2) {
                     return null; // a real scatter must distribute to 2+ cells
                 }
+
                 $absTargets = [];
                 foreach ($eff['targets'] as $rel => $factor) {
                     $absTargets[$pos + $rel] = $factor;
                 }
+
                 $scatter = ['pos' => $pos, 'targets' => $absTargets];
                 continue;
             }
 
-            if ($gather !== null) {
+            if (null !== $gather) {
                 return null; // more than two nested loops
             }
 
             // The gather must be a single-target move-loop (factor 1) whose
             // target is the original scatter source (preserves B), and whose
             // own source position was one of the scatter's targets (the temp).
-            if (count($eff['targets']) !== 1) {
+            if (1 !== \count($eff['targets'])) {
                 return null;
             }
+
             $relTarget = array_key_first($eff['targets']);
             $factor = $eff['targets'][$relTarget];
-            if ($factor !== 1) {
+            if (1 !== $factor) {
                 return null;
             }
+
             $absTarget = $pos + $relTarget;
             if (!isset($scatter['targets'][$pos])) {
                 return null; // gather source isn't a scatter target → not a temp
             }
+
             if ($absTarget !== $scatter['pos']) {
                 return null; // gather doesn't restore B
             }
+
             $gather = ['pos' => $pos, 'target' => $absTarget];
         }
 
-        if ($pos !== 0 || $scatter === null || $gather === null) {
+        if (0 !== $pos || null === $scatter || null === $gather) {
             return null;
         }
 
         // Net effect: every scatter target except the temp accumulates A·B.
         $bPos = $scatter['pos'];
         $tempPos = $gather['pos'];
-        $bRefSuffix = $bPos > 0 ? '+' . $bPos : ($bPos === 0 ? '' : (string) $bPos);
+        $bRefSuffix = $bPos > 0 ? '+'.$bPos : (0 === $bPos ? '' : (string) $bPos);
 
         $out = '';
         foreach ($scatter['targets'] as $absPos => $coef) {
             if ($absPos === $tempPos) {
                 continue; // restored by gather
             }
-            $posStr = $absPos > 0 ? '+' . $absPos : (string) $absPos;
-            $factor = $coef === 1 ? '' : ('*' . $coef);
-            if ($this->cellMask !== self::MASK_INT) {
-                $out .= '$d[$i' . $posStr . ']=(($d[$i' . $posStr . ']??0)+($d[$i]??0)*($d[$i'
-                    . $bRefSuffix . ']??0)' . $factor . ')&' . $this->cellMask . ';';
+
+            $posStr = $absPos > 0 ? '+'.$absPos : (string) $absPos;
+            $factor = 1 === $coef ? '' : ('*'.$coef);
+            if (self::MASK_INT !== $this->cellMask) {
+                $out .= '$d[$i'.$posStr.']=(($d[$i'.$posStr.']??0)+($d[$i]??0)*($d[$i'
+                    .$bRefSuffix.']??0)'.$factor.')&'.$this->cellMask.';';
             } else {
-                $out .= '$d[$i' . $posStr . ']=($d[$i' . $posStr . ']??0)+(($d[$i]??0)*($d[$i'
-                    . $bRefSuffix . ']??0))' . $factor . ';';
+                $out .= '$d[$i'.$posStr.']=($d[$i'.$posStr.']??0)+(($d[$i]??0)*($d[$i'
+                    .$bRefSuffix.']??0))'.$factor.';';
             }
         }
-        $out .= '$d[$i]=0;';
 
-        return $out;
+        return $out.'$d[$i]=0;';
     }
 
     /**
@@ -1056,28 +1097,29 @@ class Compiler
      */
     private function cyclesOpWithClear(string $str): string
     {
-        $len = strlen($str);
+        $len = \strlen($str);
 
         // First pass: determine control type.
         $pos = 0;
         $hasClearAtZero = false;
-        $hasDecrAtZero  = false;
+        $hasDecrAtZero = false;
 
-        for ($k = 0; $k < $len; $k++) {
+        for ($k = 0; $k < $len; ++$k) {
             if ((string) (int) $str[$k] === $str[$k]) {
                 $num = (int) substr($str, $k++, 2);
-                $op  = $str[++$k];
+                $op = $str[++$k];
             } else {
                 $num = 1;
-                $op  = $str[$k];
+                $op = $str[$k];
             }
-            if ($op === 'p') {
+
+            if ('p' === $op) {
                 $pos += $num;
-            } elseif ($op === 'm') {
+            } elseif ('m' === $op) {
                 $pos -= $num;
-            } elseif ($op === 'c' && $pos === 0) {
+            } elseif ('c' === $op && 0 === $pos) {
                 $hasClearAtZero = true;
-            } elseif ($op === 'M' && $pos === 0) {
+            } elseif ('M' === $op && 0 === $pos) {
                 $hasDecrAtZero = true;
             }
         }
@@ -1090,7 +1132,7 @@ class Compiler
             return $this->linearLoopWithClearOpt($str, $len);
         }
 
-        return 'L' . $str . 'R';
+        return 'L'.$str.'R';
     }
 
     /**
@@ -1104,39 +1146,41 @@ class Compiler
         $out = '';
         $pos = 0;
 
-        for ($k = 0; $k < $len; $k++) {
+        for ($k = 0; $k < $len; ++$k) {
             if ((string) (int) $str[$k] === $str[$k]) {
                 $num = (int) substr($str, $k++, 2);
-                $op  = $str[++$k];
+                $op = $str[++$k];
             } else {
                 $num = 1;
-                $op  = $str[$k];
+                $op = $str[$k];
             }
 
-            if ($op === 'p') {
+            if ('p' === $op) {
                 $pos += $num;
                 continue;
             }
-            if ($op === 'm') {
+
+            if ('m' === $op) {
                 $pos -= $num;
                 continue;
             }
-            if ($pos === 0) {
+
+            if (0 === $pos) {
                 continue;
             } // overridden by final $d[$i]=0
 
-            $posStr = $pos > 0 ? '+' . $pos : (string) $pos;
-            $ref    = '$d[$i' . $posStr . ']';
+            $posStr = $pos > 0 ? '+'.$pos : (string) $pos;
+            $ref = '$d[$i'.$posStr.']';
 
             $out .= match ($op) {
-                'P'     => $this->wrapCell($ref, '+', $num),
-                'M'     => $this->wrapCell($ref, '-', $num),
-                'c'     => $ref . '=0;',
+                'P' => $this->wrapCell($ref, '+', $num),
+                'M' => $this->wrapCell($ref, '-', $num),
+                'c' => $ref.'=0;',
                 default => '',
             };
         }
 
-        return 'if($d[$i]??0){' . $out . '$d[$i]=0;}';
+        return 'if($d[$i]??0){'.$out.'$d[$i]=0;}';
     }
 
     /**
@@ -1159,44 +1203,46 @@ class Compiler
         /** @var array<int, true> $cleared */
         $cleared = [];
 
-        for ($k = 0; $k < $len; $k++) {
+        for ($k = 0; $k < $len; ++$k) {
             if ((string) (int) $str[$k] === $str[$k]) {
                 $num = (int) substr($str, $k++, 2);
-                $op  = $str[++$k];
+                $op = $str[++$k];
             } else {
                 $num = 1;
-                $op  = $str[$k];
+                $op = $str[$k];
             }
 
-            if ($op === 'p') {
+            if ('p' === $op) {
                 $pos += $num;
                 continue;
             }
-            if ($op === 'm') {
+
+            if ('m' === $op) {
                 $pos -= $num;
                 continue;
             }
 
-            if ($pos === 0) {
-                if ($op !== 'M') {
-                    return 'L' . $str . 'R';
+            if (0 === $pos) {
+                if ('M' !== $op) {
+                    return 'L'.$str.'R';
                 }
+
                 $divider += $num;
                 continue;
             }
 
-            if ($op === 'c') {
+            if ('c' === $op) {
                 unset($effects[$pos]);
                 $cleared[$pos] = true;
                 $constants[$pos] = 0;
                 continue;
             }
 
-            if ($op !== 'P' && $op !== 'M') {
-                return 'L' . $str . 'R';
+            if ('P' !== $op && 'M' !== $op) {
+                return 'L'.$str.'R';
             }
 
-            $delta = $op === 'P' ? $num : -$num;
+            $delta = 'P' === $op ? $num : -$num;
             if (isset($cleared[$pos])) {
                 $constants[$pos] += $delta;
             } else {
@@ -1204,26 +1250,27 @@ class Compiler
             }
         }
 
-        if ($divider !== 1 || ($effects === [] && $constants === [])) {
-            return 'L' . $str . 'R';
+        if (1 !== $divider || ([] === $effects && [] === $constants)) {
+            return 'L'.$str.'R';
         }
 
         $out = $this->genStraightLine($effects, $divider);
-        if ($constants === []) {
+        if ([] === $constants) {
             return $out;
         }
 
         ksort($constants);
         $constantOut = '';
         foreach ($constants as $constPos => $value) {
-            if ($this->cellMask !== self::MASK_INT) {
+            if (self::MASK_INT !== $this->cellMask) {
                 $value &= $this->cellMask;
             }
-            $constantOut .= $this->cellRef($constPos) . '=' . $value . ';';
+
+            $constantOut .= $this->cellRef($constPos).'='.$value.';';
         }
 
         // The clear/set side effects only happen when the original loop runs.
-        return 'if($d[$i]??0){' . $constantOut . '}' . $out;
+        return 'if($d[$i]??0){'.$constantOut.'}'.$out;
     }
 
     /**
@@ -1239,73 +1286,69 @@ class Compiler
             // detects the `L` opcode in the body and dispatches to tryMulOpt.
             // If it can't optimise, it returns `L...R` unchanged so the second
             // pass can still process the inner loops as while-loops.
-            '/L((?:[MPmpc\d]|L[MPmpc\d]+R)+)R/'
-                => fn (array $m): string => $this->cyclesOp(self::pcreGroup($m, 1)),
+            '/L((?:[MPmpc\d]|L[MPmpc\d]+R)+)R/' => fn (array $m): string => $this->cyclesOp($this->pcreGroup($m, 1)),
 
             // Second pass: innermost flat loops (no nested L/R).
             // [>>>+<<-<] → straight-line arithmetic.
-            '/L([MPmpc\d]+)R/' => fn (array $m): string => $this->cyclesOp(self::pcreGroup($m, 1)),
+            '/L([MPmpc\d]+)R/' => fn (array $m): string => $this->cyclesOp($this->pcreGroup($m, 1)),
 
             // [-]+N, [-]-N — cell is known zero after clear; fold into a direct constant assignment.
-            '/c(\d{2}|)([PM])/' => fn (array $m): string => '$d[$i]=' . (
-                $this->cellMask === self::MASK_INT
-                    ? ((self::pcreGroup($m, 2) === 'P' ? 1 : -1)
-                        * (self::pcreGroup($m, 1) !== '' ? (int) self::pcreGroup($m, 1) : 1))
-                    : (((self::pcreGroup($m, 2) === 'P' ? 1 : -1)
-                        * (self::pcreGroup($m, 1) !== '' ? (int) self::pcreGroup($m, 1) : 1))
+            '/c(\d{2}|)([PM])/' => fn (array $m): string => '$d[$i]='.(
+                self::MASK_INT === $this->cellMask
+                    ? (('P' === $this->pcreGroup($m, 2) ? 1 : -1)
+                        * ('' !== $this->pcreGroup($m, 1) ? (int) $this->pcreGroup($m, 1) : 1))
+                    : ((('P' === $this->pcreGroup($m, 2) ? 1 : -1)
+                        * ('' !== $this->pcreGroup($m, 1) ? (int) $this->pcreGroup($m, 1) : 1))
                         & $this->cellMask)
-            ) . ';',
+            ).';',
 
             // <+++>, <[-]>, <--->
-            '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' =>
-                fn (array $m): string => $this->dirOp(
-                    self::pcreGroup($m, 2),
-                    self::pcreGroup($m, 1),
-                    self::pcreGroup($m, 3),
-                    self::pcreGroup($m, 4),
-                ),
+            '/(\d{2}|(?<!\d))(m)(\d{2}|)([McP])\\1p/' => fn (array $m): string => $this->dirOp(
+                $this->pcreGroup($m, 2),
+                $this->pcreGroup($m, 1),
+                $this->pcreGroup($m, 3),
+                $this->pcreGroup($m, 4),
+            ),
 
             // >+++<, >[-]<, >---<
-            '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/' =>
-                fn (array $m): string => $this->dirOp(
-                    self::pcreGroup($m, 2),
-                    self::pcreGroup($m, 1),
-                    self::pcreGroup($m, 3),
-                    self::pcreGroup($m, 4),
-                ),
+            '/(\d{2}|(?<!\d))(p)(\d{2}|)([McP])\\1m/' => fn (array $m): string => $this->dirOp(
+                $this->pcreGroup($m, 2),
+                $this->pcreGroup($m, 1),
+                $this->pcreGroup($m, 3),
+                $this->pcreGroup($m, 4),
+            ),
 
             // ++>>, <<<-
             '/(\d{2}|(?<!\d))([MP])([mp])/' => fn (array $m): string => $this->op(
-                self::pcreGroup($m, 1),
-                self::pcreGroup($m, 2),
-                self::pcreGroup($m, 3) === 'm' ? '$i--' : '$i++',
+                $this->pcreGroup($m, 1),
+                $this->pcreGroup($m, 2),
+                'm' === $this->pcreGroup($m, 3) ? '$i--' : '$i++',
             ),
 
             // <<+, >>>-, >>>[-]
-            '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' =>
-                fn (array $m): string => $this->op(
-                    self::pcreGroup($m, 3),
-                    self::pcreGroup($m, 4),
-                    rtrim($this->op(self::pcreGroup($m, 1), self::pcreGroup($m, 2)), ';'),
-                ),
+            '/(\d{2}|(?<!\d))([pm])(\d{2}|)([PMc])/' => fn (array $m): string => $this->op(
+                $this->pcreGroup($m, 3),
+                $this->pcreGroup($m, 4),
+                rtrim($this->op($this->pcreGroup($m, 1), $this->pcreGroup($m, 2)), ';'),
+            ),
 
             // ++, ---, [-], [<], [>], <<<, >>>
-            '/(\d{2}|)([MPmplrc])/' => fn (array $m): string => $this->op(self::pcreGroup($m, 1), self::pcreGroup($m, 2)),
+            '/(\d{2}|)([MPmplrc])/' => fn (array $m): string => $this->op($this->pcreGroup($m, 1), $this->pcreGroup($m, 2)),
         ];
 
         foreach ($patterns as $pattern => $callback) {
             $str = preg_replace_callback($pattern, $callback, $str) ?? '';
         }
 
-        $readInput = '(array_shift($in)??0)&' . $this->cellMask;
+        $readInput = '(array_shift($in)??0)&'.$this->cellMask;
 
-        $commaBody = $this->buildCommaReloadBlock() . '$d[$i]=' . $readInput . ';';
+        $commaBody = $this->buildCommaReloadBlock().'$d[$i]='.$readInput.';';
         if (!$this->stdinLineBuffered && $this->inputCrLf) {
-            $commaBody .= '$bfInputPrev=($d[$i]??0)&' . $this->cellMask . ';';
+            $commaBody .= '$bfInputPrev=($d[$i]??0)&'.$this->cellMask.';';
         }
 
         $map = [
-            'E' => 'echo chr(($d[$i]??0)&' . self::MASK_BYTE . ');',
+            'E' => 'echo chr(($d[$i]??0)&'.self::MASK_BYTE.');',
             'l' => 'for(;$d[$i]??0;--$i);',
             'r' => 'for(;$d[$i]??0;++$i);',
             ',' => $commaBody,
@@ -1316,20 +1359,20 @@ class Compiler
         if ($this->debug) {
             $map['#'] = 'echo "$i: ".($d[$i]??0)."\n";';
         }
+
         if ($this->brainfork) {
             $map['Y'] = '$pid=pcntl_fork();if($pid)$d[$i]=0;else $d[++$i]=1;';
         }
+
         if ($this->randomOpcode) {
             $maxRand = match ($this->cellMask) {
                 self::MASK_BYTE => '255',
                 self::MASK_WORD => '65535',
                 default => 'PHP_INT_MAX',
             };
-            $map['@'] = '$d[$i]=random_int(0,' . $maxRand . ');';
+            $map['@'] = '$d[$i]=random_int(0,'.$maxRand.');';
         }
 
-        $str = strtr($str, $map);
-
-        return $str;
+        return strtr($str, $map);
     }
 }

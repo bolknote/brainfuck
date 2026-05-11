@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
-$cacheDir = $root . '/cache';
+$cacheDir = $root.'/cache';
 if (!is_dir($cacheDir)) {
-    mkdir($cacheDir, 0755, true);
+    mkdir($cacheDir, 0o755, true);
 }
 
 $finder = PhpCsFixer\Finder::create()
@@ -14,12 +14,19 @@ $finder = PhpCsFixer\Finder::create()
     ->exclude('cache')
     ->name('*.php');
 
-return (new PhpCsFixer\Config())
-    ->setCacheFile($cacheDir . '/php-cs-fixer.cache')
+return new PhpCsFixer\Config()
+    ->setCacheFile($cacheDir.'/php-cs-fixer.cache')
     ->setRiskyAllowed(true)
     ->setUnsupportedPhpVersionAllowed(true)
     ->setRules([
-        '@PSR12' => true,
+        '@PER-CS2.0' => true,
+        '@PER-CS2.0:risky' => true,
+        '@Symfony' => true,
+        '@Symfony:risky' => true,
+        '@PHP84Migration' => true,
         'declare_strict_types' => true,
+        'strict_param' => true,
+        'array_syntax' => ['syntax' => 'short'],
+        'php_unit_test_case_static_method_calls' => ['call_type' => 'self'],
     ])
     ->setFinder($finder);

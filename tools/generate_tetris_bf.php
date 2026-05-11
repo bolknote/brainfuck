@@ -5,11 +5,12 @@ declare(strict_types=1);
 final class Bf
 {
     private string $code = '';
+
     private int $ptr = 0;
 
     public function program(): string
     {
-        return $this->code . "\n";
+        return $this->code."\n";
     }
 
     public function move(int $cell): void
@@ -78,15 +79,15 @@ final class Bf
     {
         $value = str_replace("\n", "\r\n", $value);
         $len = strlen($value);
-        if ($len === 0) {
+        if (0 === $len) {
             return;
         }
 
         $previous = ord($value[0]);
         $this->outByte($previous);
 
-        for ($i = 0; $i < $len; $i++) {
-            if ($i === 0) {
+        for ($i = 0; $i < $len; ++$i) {
+            if (0 === $i) {
                 continue;
             }
 
@@ -99,6 +100,7 @@ final class Bf
             } else {
                 $this->raw(str_repeat('-', $decrease));
             }
+
             $this->outCell(T::OUT);
             $previous = $current;
         }
@@ -206,7 +208,7 @@ final class Bf
      */
     private function temp(array $avoid = []): int
     {
-        for ($cell = 21; $cell < 41; $cell++) {
+        for ($cell = 21; $cell < 41; ++$cell) {
             if (!in_array($cell, $avoid, true)) {
                 return $cell;
             }
@@ -219,32 +221,59 @@ final class Bf
 final class T
 {
     public const int OUT = 0;
+
     public const int KEY = 1;
+
     public const int KEY2 = 2;
+
     public const int KEY3 = 3;
+
     public const int RUN = 4;
+
     public const int COMMAND = 5;
+
     public const int X = 6;
+
     public const int Y = 7;
+
     public const int COLOR = 8;
+
     public const int NEXT = 9;
+
     public const int RAND = 10;
+
     public const int WAIT = 11;
+
     public const int DELAY = 12;
+
     public const int FULL = 13;
+
     public const int RENDER = 14;
+
     public const int LINES = 15;
+
     public const int ROT_NEXT = 16;
+
     public const int BURN = 17;
+
     public const int PIECE = 18;
+
     public const int ROT = 19;
+
     public const int ROT_OLD = 20;
+
     public const int CAN_DOWN = 41;
+
     public const int CAN_LEFT = 42;
+
     public const int CAN_RIGHT = 43;
+
     public const int CAN_ROTATE = 44;
+
     public const int BOARD = 45;
+
     public const int WIDTH = 10;
+
     public const int HEIGHT = 20;
 }
 
@@ -278,6 +307,7 @@ function pieceShapes(): array
 
 /**
  * @param list<array{0: int, 1: int}> $shape
+ *
  * @return array{0: int, 1: int}
  */
 function shapeSize(array $shape): array
@@ -309,6 +339,9 @@ function ifCellFilled(Bf $b, int $cell, callable $body): void
     $b->onceIfNonzero($cell, $body);
 }
 
+/**
+ * @param callable(list<array{0: int, 1: int}>, int, int): void $body
+ */
 function withActiveShape(Bf $b, callable $body): void
 {
     foreach (pieceShapes() as $piece => $shape) {
@@ -321,66 +354,86 @@ function withActiveShape(Bf $b, callable $body): void
 
 function setBoardAtPiece(Bf $b, int $valueCell): void
 {
-    withActiveShape($b, static function (array $shape, int $width, int $height) use ($b, $valueCell): void {
-        for ($y = 0; $y <= T::HEIGHT - $height; $y++) {
-            for ($x = 0; $x <= T::WIDTH - $width; $x++) {
-                ifPosition($b, $x, $y, static function () use ($b, $shape, $x, $y, $valueCell): void {
-                    foreach ($shape as [$dx, $dy]) {
-                        $b->copy($valueCell, board($x + $dx, $y + $dy));
-                    }
-                });
+    withActiveShape(
+        $b,
+        /**
+         * @param list<array{0: int, 1: int}> $shape
+         */
+        static function (array $shape, int $width, int $height) use ($b, $valueCell): void {
+            for ($y = 0; $y <= T::HEIGHT - $height; ++$y) {
+                for ($x = 0; $x <= T::WIDTH - $width; ++$x) {
+                    ifPosition($b, $x, $y, static function () use ($b, $shape, $x, $y, $valueCell): void {
+                        foreach ($shape as [$dx, $dy]) {
+                            $b->copy($valueCell, board($x + $dx, $y + $dy));
+                        }
+                    });
+                }
             }
         }
-    });
+    );
 }
 
 function clearBoardAtPiece(Bf $b): void
 {
-    withActiveShape($b, static function (array $shape, int $width, int $height) use ($b): void {
-        for ($y = 0; $y <= T::HEIGHT - $height; $y++) {
-            for ($x = 0; $x <= T::WIDTH - $width; $x++) {
-                ifPosition($b, $x, $y, static function () use ($b, $shape, $x, $y): void {
-                    foreach ($shape as [$dx, $dy]) {
-                        $b->clear(board($x + $dx, $y + $dy));
-                    }
-                });
+    withActiveShape(
+        $b,
+        /**
+         * @param list<array{0: int, 1: int}> $shape
+         */
+        static function (array $shape, int $width, int $height) use ($b): void {
+            for ($y = 0; $y <= T::HEIGHT - $height; ++$y) {
+                for ($x = 0; $x <= T::WIDTH - $width; ++$x) {
+                    ifPosition($b, $x, $y, static function () use ($b, $shape, $x, $y): void {
+                        foreach ($shape as [$dx, $dy]) {
+                            $b->clear(board($x + $dx, $y + $dy));
+                        }
+                    });
+                }
             }
         }
-    });
+    );
 }
 
 function checkPieceCells(Bf $b, int $can, int $moveX, int $moveY): void
 {
-    withActiveShape($b, static function (array $shape, int $width, int $height) use ($b, $moveX, $moveY, $can): void {
-        for ($badX = T::WIDTH - $width + 1; $badX < T::WIDTH; $badX++) {
-            $b->onceIfEq(T::X, $badX, static function () use ($b, $can): void {
-                $b->clear($can);
-            });
-        }
-        for ($badY = T::HEIGHT - $height + 1; $badY < T::HEIGHT; $badY++) {
-            $b->onceIfEq(T::Y, $badY, static function () use ($b, $can): void {
-                $b->clear($can);
-            });
-        }
-        for ($y = 0; $y <= T::HEIGHT - $height; $y++) {
-            for ($x = 0; $x <= T::WIDTH - $width; $x++) {
-                ifPosition($b, $x, $y, static function () use ($b, $shape, $x, $y, $moveX, $moveY, $can): void {
-                    foreach ($shape as [$dx, $dy]) {
-                        $targetX = $x + $dx + $moveX;
-                        $targetY = $y + $dy + $moveY;
-                        if ($targetX < 0 || $targetX >= T::WIDTH || $targetY < 0 || $targetY >= T::HEIGHT) {
-                            $b->clear($can);
-                            continue;
-                        }
-
-                        ifCellFilled($b, board($targetX, $targetY), static function () use ($b, $can): void {
-                            $b->clear($can);
-                        });
-                    }
+    withActiveShape(
+        $b,
+        /**
+         * @param list<array{0: int, 1: int}> $shape
+         */
+        static function (array $shape, int $width, int $height) use ($b, $moveX, $moveY, $can): void {
+            for ($badX = T::WIDTH - $width + 1; $badX < T::WIDTH; ++$badX) {
+                $b->onceIfEq(T::X, $badX, static function () use ($b, $can): void {
+                    $b->clear($can);
                 });
             }
+
+            for ($badY = T::HEIGHT - $height + 1; $badY < T::HEIGHT; ++$badY) {
+                $b->onceIfEq(T::Y, $badY, static function () use ($b, $can): void {
+                    $b->clear($can);
+                });
+            }
+
+            for ($y = 0; $y <= T::HEIGHT - $height; ++$y) {
+                for ($x = 0; $x <= T::WIDTH - $width; ++$x) {
+                    ifPosition($b, $x, $y, static function () use ($b, $shape, $x, $y, $moveX, $moveY, $can): void {
+                        foreach ($shape as [$dx, $dy]) {
+                            $targetX = $x + $dx + $moveX;
+                            $targetY = $y + $dy + $moveY;
+                            if ($targetX < 0 || $targetX >= T::WIDTH || $targetY < 0 || $targetY >= T::HEIGHT) {
+                                $b->clear($can);
+                                continue;
+                            }
+
+                            ifCellFilled($b, board($targetX, $targetY), static function () use ($b, $can): void {
+                                $b->clear($can);
+                            });
+                        }
+                    });
+                }
+            }
         }
-    });
+    );
 }
 
 function randomizeNext(Bf $b): void
@@ -403,26 +456,29 @@ function accelerate(Bf $b): void
 
 function clearLines(Bf $b): void
 {
-    for ($row = T::HEIGHT - 1; $row >= 0; $row--) {
+    for ($row = T::HEIGHT - 1; $row >= 0; --$row) {
         $b->set(T::FULL, 1);
-        for ($x = 0; $x < T::WIDTH; $x++) {
+        for ($x = 0; $x < T::WIDTH; ++$x) {
             $b->onceIfZero(board($x, $row), static function () use ($b): void {
                 $b->clear(T::FULL);
             });
         }
+
         $b->onceIfNonzero(T::FULL, static function () use ($b, $row): void {
             $b->add(T::LINES);
             $b->onceIfEq(T::LINES, 10, static function () use ($b): void {
                 $b->clear(T::LINES);
             });
-            for ($y = $row; $y > 0; $y--) {
-                for ($x = 0; $x < T::WIDTH; $x++) {
+            for ($y = $row; $y > 0; --$y) {
+                for ($x = 0; $x < T::WIDTH; ++$x) {
                     $b->copy(board($x, $y - 1), board($x, $y));
                 }
             }
-            for ($x = 0; $x < T::WIDTH; $x++) {
+
+            for ($x = 0; $x < T::WIDTH; ++$x) {
                 $b->clear(board($x, 0));
             }
+
             accelerate($b);
         });
     }
@@ -676,19 +732,20 @@ function render(Bf $b): void
     setBoardAtPiece($b, T::COLOR);
     $b->outString("\033[H");
     $b->outString("╔════════════════════╗   BF TETRIS\n");
-    for ($y = 0; $y < T::HEIGHT; $y++) {
+    for ($y = 0; $y < T::HEIGHT; ++$y) {
         $b->outString('║');
-        for ($x = 0; $x < T::WIDTH; $x++) {
+        for ($x = 0; $x < T::WIDTH; ++$x) {
             $b->copy(board($x, $y), T::RENDER);
             renderCell($b);
         }
+
         $b->outString('║');
-        if ($y === 0) {
-            $b->outString("   ←/→ move  ↑ rotate");
-        } elseif ($y === 1) {
-            $b->outString("   ↓ drop    q quit");
-        } elseif ($y === 2) {
-            $b->outString("   next ");
+        if (0 === $y) {
+            $b->outString('   ←/→ move  ↑ rotate');
+        } elseif (1 === $y) {
+            $b->outString('   ↓ drop    q quit');
+        } elseif (2 === $y) {
+            $b->outString('   next ');
             $b->copy(T::NEXT, T::RENDER);
             $b->onceIfEq(T::NEXT, 3, static function () use ($b): void {
                 $b->set(T::RENDER, 5);
@@ -706,11 +763,13 @@ function render(Bf $b): void
                 $b->set(T::RENDER, 7);
             });
             renderCell($b);
-            $b->outString("   lines ");
+            $b->outString('   lines ');
             $b->outDigit(T::LINES);
         }
+
         $b->outString("\n");
     }
+
     $b->outString("╚════════════════════╝\n");
     clearBoardAtPiece($b);
 }
@@ -743,12 +802,13 @@ function findZopfliBinary(): ?string
     $out = [];
     $code = 0;
     exec('command -v zopfli 2>/dev/null', $out, $code);
-    if ($code !== 0 || $out === []) {
+    if (0 !== $code || [] === $out) {
         return null;
     }
+
     $path = trim($out[0]);
 
-    return $path !== '' ? $path : null;
+    return '' !== $path ? $path : null;
 }
 
 /**
@@ -758,41 +818,38 @@ function gzipProgram(string $program, bool $useZopfli): array
 {
     if ($useZopfli) {
         $zopfli = findZopfliBinary();
-        if ($zopfli === null) {
-            fwrite(STDERR, "zopfli not found in PATH; using zlib gzip\n");
+        if (null === $zopfli) {
+            fwrite(\STDERR, "zopfli not found in PATH; using zlib gzip\n");
         }
     } else {
         $zopfli = null;
     }
 
-    if ($zopfli !== null) {
+    if (null !== $zopfli) {
         $tmp = tempnam(sys_get_temp_dir(), 'tetbf');
-        if ($tmp === false) {
+        if (false === $tmp) {
             throw new RuntimeException('tempnam failed');
         }
+
         try {
-            if (file_put_contents($tmp, $program) === false) {
+            if (false === file_put_contents($tmp, $program)) {
                 throw new RuntimeException('Failed to write temp file for zopfli');
             }
+
             $iter = getenv('ZOPFLI_ITERATIONS');
             $iterFlag = '';
             if (
                 is_string($iter)
-                && $iter !== ''
+                && '' !== $iter
                 && ctype_digit($iter)
                 && (int) $iter >= 1
             ) {
-                $iterFlag = ' --i' . (int) $iter;
+                $iterFlag = ' --i'.(int) $iter;
             }
 
-            $cmd = escapeshellarg($zopfli) . $iterFlag . ' --gzip -c ' . escapeshellarg($tmp) . ' 2>/dev/null';
+            $cmd = escapeshellarg($zopfli).$iterFlag.' --gzip -c '.escapeshellarg($tmp).' 2>/dev/null';
             $payload = shell_exec($cmd);
-            if (
-                is_string($payload)
-                && strlen($payload) >= 2
-                && $payload[0] === "\x1f"
-                && $payload[1] === "\x8b"
-            ) {
+            if (is_string($payload) && str_starts_with($payload, "\x1f\x8b")) {
                 return [$payload, true];
             }
         } finally {
@@ -801,17 +858,27 @@ function gzipProgram(string $program, bool $useZopfli): array
     }
 
     $payload = gzencode($program, 9);
-    if ($payload === false) {
+    if (false === $payload) {
         throw new RuntimeException('Failed to gzip generated Tetris program');
     }
 
     return [$payload, false];
 }
 
-$target = __DIR__ . '/../samples/programs/demos/tetris.bf';
-$useZopfli = in_array('--zopfli', $argv, true) || in_array('-Z', $argv, true);
+$target = __DIR__.'/../samples/programs/demos/tetris.bf';
+$cliArgv = [];
+$rawArgv = $_SERVER['argv'] ?? null;
+if (is_array($rawArgv)) {
+    foreach ($rawArgv as $v) {
+        if (is_string($v)) {
+            $cliArgv[] = $v;
+        }
+    }
+}
+
+$useZopfli = in_array('--zopfli', $cliArgv, true) || in_array('-Z', $cliArgv, true);
 [$payload, $usedZopfli] = gzipProgram($b->program(), $useZopfli);
-file_put_contents($target, "#!/usr/bin/env -S ./bfrun -@ -I -z\n" . $payload);
-chmod($target, 0755);
+file_put_contents($target, "#!/usr/bin/env -S ./bfrun -@ -I -z\n".$payload);
+chmod($target, 0o755);
 $via = $usedZopfli ? 'zopfli' : 'zlib';
-fwrite(STDERR, "Generated {$target} (gzip via {$via})\n");
+fwrite(\STDERR, "Generated {$target} (gzip via {$via})\n");

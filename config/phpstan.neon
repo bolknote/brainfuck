@@ -1,6 +1,15 @@
+includes:
+    - ../vendor/phpstan/phpstan-strict-rules/rules.neon
+    - ../vendor/phpstan/phpstan-deprecation-rules/rules.neon
+    - ../vendor/phpstan/phpstan-phpunit/extension.neon
+    - ../vendor/phpstan/phpstan-phpunit/rules.neon
+
 parameters:
     level: 10
+    bootstrapFiles:
+        - phpstan-stub-baseline-compiler.php
     paths:
         - ../src
         - ../tests
+        - ../tools
         - ../bfrun

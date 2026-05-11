@@ -8,8 +8,21 @@ $root = dirname(__DIR__);
 
 return RectorConfig::configure()
     ->withPaths([
-        $root . '/src',
-        $root . '/tests',
-        $root . '/bfrun',
+        $root.'/src',
+        $root.'/tests',
+        $root.'/tools',
+        $root.'/bfrun',
     ])
-    ->withPhpSets(php84: true);
+    ->withPhpSets(php84: true)
+    ->withPreparedSets(
+        deadCode: true,
+        codeQuality: true,
+        codingStyle: true,
+        typeDeclarations: true,
+        privatization: true,
+        earlyReturn: true
+    )
+    ->withSkip([
+        Rector\TypeDeclaration\Rector\ClassMethod\StrictArrayParamDimFetchRector::class,
+        Rector\Php81\Rector\FuncCall\NullToStrictStringFuncCallArgRector::class,
+    ]);
